@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   CircleAlert,
+  CircleUserRound,
   Download,
+  ExternalLink,
   FileAudio,
   Image,
   Loader2,
@@ -49,7 +51,11 @@ function App() {
   const [title, setTitle] = useState('Converted MP3 Video');
   const [description, setDescription] = useState('');
   const [privacyStatus, setPrivacyStatus] = useState('private');
-  const [youtube, setYoutube] = useState({ configured: false, connected: false });
+  const [youtube, setYoutube] = useState({
+    configured: false,
+    connected: false,
+    channel: null,
+  });
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
   const [job, setJob] = useState(initialJob);
   const [clientUploadProgress, setClientUploadProgress] = useState(0);
@@ -82,7 +88,7 @@ function App() {
         if (active) setYoutube(data);
       })
       .catch(() => {
-        if (active) setYoutube({ configured: false, connected: false });
+        if (active) setYoutube({ configured: false, connected: false, channel: null });
       });
 
     fetch(`${API_URL}/api/health`, { credentials: 'include' })
@@ -118,7 +124,7 @@ function App() {
     };
   }, [imagePreviewUrl]);
 
-  async function connectYoutube() {
+  async function loginWithYoutube() {
     setError('');
     const response = await fetch(`${API_URL}/api/youtube/auth-url`, {
       credentials: 'include',
@@ -128,7 +134,12 @@ function App() {
       setError(data.error || 'Google OAuth is not configured.');
       return;
     }
-    window.location.href = data.url;
+    window.location.assign(data.url);
+  }
+
+  async function changeYoutubeChannel() {
+    await disconnectYoutube();
+    await loginWithYoutube();
   }
 
   async function disconnectYoutube() {
@@ -136,7 +147,7 @@ function App() {
       method: 'POST',
       credentials: 'include',
     });
-    setYoutube((current) => ({ ...current, connected: false }));
+    setYoutube((current) => ({ ...current, connected: false, channel: null }));
   }
 
   function startJob() {
@@ -345,35 +356,74 @@ function App() {
 
                   <TabsContent value="youtube">
                     <div className="grid gap-4">
-                      <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold">
-                            {youtube.connected ? 'YouTube connected' : 'YouTube not connected'}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {youtube.configured
-                              ? 'OAuth session is stored in an HTTP-only cookie.'
-                              : 'Google OAuth environment variables are missing.'}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          {youtube.connected ? (
-                            <Button type="button" variant="outline" onClick={disconnectYoutube}>
-                              <PlugZap aria-hidden="true" />
-                              Disconnect
-                            </Button>
-                          ) : (
+                      <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        {youtube.connected ? (
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ChannelAvatar channel={youtube.channel} />
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold uppercase text-muted-foreground">
+                                  Selected channel
+                                </p>
+                                <p className="truncate text-sm font-semibold">
+                                  {youtube.channel?.title || 'YouTube channel selected'}
+                                </p>
+                                <p className="truncate text-sm text-muted-foreground">
+                                  {youtube.channel?.customUrl ||
+                                    youtube.channel?.id ||
+                                    'Ready for direct upload'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button type="button" variant="outline" onClick={changeYoutubeChannel}>
+                                <TvMinimalPlay aria-hidden="true" />
+                                Change channel
+                              </Button>
+                              <Button type="button" variant="ghost" onClick={disconnectYoutube}>
+                                <PlugZap aria-hidden="true" />
+                                Disconnect
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold">Login with YouTube</p>
+                              <p className="text-sm text-muted-foreground">
+                                {youtube.configured
+                                  ? 'Google will ask which account or channel should receive uploads.'
+                                  : 'Google OAuth environment variables are missing.'}
+                              </p>
+                            </div>
                             <Button
                               type="button"
-                              onClick={connectYoutube}
+                              onClick={loginWithYoutube}
                               disabled={!youtube.configured}
                             >
                               <TvMinimalPlay aria-hidden="true" />
-                              Connect YouTube
+                              Login with YouTube
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
+
+                      {youtube.connected && (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <ChannelMetric
+                            label="Videos"
+                            value={formatCount(youtube.channel?.videoCount)}
+                          />
+                          <ChannelMetric
+                            label="Subscribers"
+                            value={formatCount(youtube.channel?.subscriberCount)}
+                          />
+                          <ChannelMetric
+                            label="Views"
+                            value={formatCount(youtube.channel?.viewCount)}
+                          />
+                        </div>
+                      )}
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
@@ -479,7 +529,7 @@ function App() {
                 {job.status === 'completed' && job.youtubeUrl && (
                   <Button asChild className="w-full" size="lg">
                     <a href={job.youtubeUrl} target="_blank" rel="noreferrer">
-                      <TvMinimalPlay aria-hidden="true" />
+                      <ExternalLink aria-hidden="true" />
                       Open YouTube Video
                     </a>
                   </Button>
@@ -577,6 +627,33 @@ function Metric({ label, value }) {
   );
 }
 
+function ChannelAvatar({ channel }) {
+  if (channel?.thumbnailUrl) {
+    return (
+      <img
+        src={channel.thumbnailUrl}
+        alt={`${channel.title || 'YouTube channel'} avatar`}
+        className="size-12 shrink-0 rounded-lg border border-border object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+      <CircleUserRound className="size-5 text-muted-foreground" aria-hidden="true" />
+    </div>
+  );
+}
+
+function ChannelMetric({ label, value }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/70 p-3">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-bold">{value}</p>
+    </div>
+  );
+}
+
 function getActiveStatus(job) {
   if (job.status === 'completed') return { label: 'Complete', variant: 'success' };
   if (job.status === 'error') return { label: 'Needs attention', variant: 'warning' };
@@ -589,6 +666,13 @@ function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB'];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatCount(value) {
+  if (value === null || value === undefined || value === '') return 'Hidden';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return new Intl.NumberFormat('en', { notation: 'compact' }).format(number);
 }
 
 function formatJobError(message) {

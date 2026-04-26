@@ -24,6 +24,7 @@ import {
   getYoutubeSession,
   getYoutubeSessionById,
   isYoutubeConfigured,
+  publicYoutubeSession,
   uploadVideoToYoutube,
   youtubeSessionCookie,
 } from './youtube.js';
@@ -91,9 +92,11 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.get('/api/youtube/status', (req, res) => {
+  const session = getYoutubeSession(req);
   res.json({
     configured: isYoutubeConfigured(),
-    connected: Boolean(getYoutubeSession(req)),
+    connected: Boolean(session),
+    channel: publicYoutubeSession(session)?.channel || null,
   });
 });
 

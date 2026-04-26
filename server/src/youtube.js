@@ -31,7 +31,7 @@ export function createYoutubeAuthUrl() {
   const url = createOAuthClient().generateAuthUrl({
     access_type: 'offline',
     include_granted_scopes: true,
-    prompt: 'consent',
+    prompt: 'consent select_account',
     scope: youtubeScopes,
     state,
   });
@@ -47,10 +47,13 @@ export async function completeYoutubeOAuth({ code, state }) {
   oauthStates.delete(state);
   const oauth = createOAuthClient();
   const { tokens } = await oauth.getToken(code);
+  oauth.setCredentials(tokens);
+  const channel = await getSelectedYoutubeChannel(oauth);
   const sessionId = randomUUID();
   youtubeSessions.set(sessionId, {
     id: sessionId,
     tokens,
+    channel,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   });
@@ -80,6 +83,14 @@ export function disconnectYoutubeSession(req, res) {
   const sessionId = req.cookies?.[youtubeSessionCookie];
   if (sessionId) youtubeSessions.delete(sessionId);
   res.clearCookie(youtubeSessionCookie);
+}
+
+export function publicYoutubeSession(session) {
+  if (!session) return null;
+  return {
+    connected: true,
+    channel: session.channel || null,
+  };
 }
 
 export async function uploadVideoToYoutube({
@@ -141,6 +152,37 @@ export async function uploadVideoToYoutube({
   return {
     videoId,
     url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
+  };
+}
+
+async function getSelectedYoutubeChannel(auth) {
+  const youtube = google.youtube({ version: 'v3', auth });
+  const response = await youtube.channels.list({
+    part: ['snippet', 'statistics'],
+    mine: true,
+    maxResults: 1,
+  });
+  const channel = response.data.items?.[0];
+
+  if (!channel) {
+    throw new Error('No YouTube channel was returned for this login.');
+  }
+
+  return {
+    id: channel.id,
+    title: channel.snippet?.title || 'Selected YouTube channel',
+    description: channel.snippet?.description || '',
+    customUrl: channel.snippet?.customUrl || '',
+    thumbnailUrl:
+      channel.snippet?.thumbnails?.default?.url ||
+      channel.snippet?.thumbnails?.medium?.url ||
+      channel.snippet?.thumbnails?.high?.url ||
+      '',
+    subscriberCount: channel.statistics?.hiddenSubscriberCount
+      ? null
+      : channel.statistics?.subscriberCount || null,
+    videoCount: channel.statistics?.videoCount || null,
+    viewCount: channel.statistics?.viewCount || null,
   };
 }
 

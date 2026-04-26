@@ -40,4 +40,7 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE === 'true',
 };
 
-export const youtubeScopes = ['https://www.googleapis.com/auth/youtube.upload'];
+export const youtubeScopes = [
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube.readonly',
+];
