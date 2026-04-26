@@ -103,9 +103,13 @@ export async function convertMp3ToMp4({ audioPath, imagePath, outputPath }, onPr
         const [key, rawValue] = line.split('=');
         if (!key || rawValue == null) continue;
 
-        if (key === 'out_time_ms' || key === 'out_time_us') {
-          const seconds = Number(rawValue) / 1_000_000;
+        if (key === 'out_time_ms' || key === 'out_time_us' || key === 'out_time') {
+          const seconds = parseProgressSeconds(key, rawValue);
+          if (!Number.isFinite(seconds)) continue;
+
           const next = Math.min(99, Math.max(lastProgress, (seconds / duration) * 100));
+          if (!Number.isFinite(next)) continue;
+
           lastProgress = next;
           onProgress(Math.round(next));
         }
@@ -135,6 +139,23 @@ export async function convertMp3ToMp4({ audioPath, imagePath, outputPath }, onPr
   });
 
   return stat(outputPath);
+}
+
+function parseProgressSeconds(key, rawValue) {
+  if (key === 'out_time') return parseFfmpegClockTime(rawValue);
+
+  const microseconds = Number(rawValue);
+  if (!Number.isFinite(microseconds) || microseconds < 0) return null;
+  return microseconds / 1_000_000;
+}
+
+function parseFfmpegClockTime(value) {
+  const match = String(value).match(/^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+  if (!match) return null;
+
+  const [, hours, minutes, seconds] = match;
+  const totalSeconds = Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+  return Number.isFinite(totalSeconds) ? totalSeconds : null;
 }
 
 function runProcess(command, args, options = {}) {

@@ -361,6 +361,8 @@ async function processJob(id) {
       outputPath: job.outputPath,
     },
     (percent) => {
+      if (!Number.isFinite(percent)) return;
+
       patchJob(id, {
         stage: 'converting',
         convertProgress: percent,

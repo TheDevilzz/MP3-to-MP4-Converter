@@ -32,6 +32,7 @@ import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
+const CLIENT_CONVERSION_SOFT_LIMIT_BYTES = 64 * 1024 * 1024;
 
 const initialJob = {
   status: 'idle',
@@ -179,6 +180,15 @@ function App() {
     }
 
     eventSourceRef.current?.close();
+    if (shouldUseBackendFirst(mp3File, imageFile) && health.ok && health.ffmpeg) {
+      const sourceSize = formatBytes((mp3File.size || 0) + (imageFile.size || 0));
+      startServerFallbackJob(
+        `Large source files (${sourceSize}) can exceed browser memory.`,
+        `Large source files (${sourceSize}) can exceed browser memory, so backend conversion started automatically.`,
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setClientUploadProgress(0);
     setJob({
@@ -254,16 +264,106 @@ function App() {
       setIsSubmitting(false);
       subscribeToJob(jobId);
     } catch (conversionError) {
+      const message = getErrorMessage(conversionError, 'Browser conversion failed.');
+      if (health.ok && health.ffmpeg) {
+        startServerFallbackJob(message);
+        return;
+      }
+
       setIsSubmitting(false);
-      setError(conversionError.message || 'Browser conversion failed.');
+      setError(message);
       setJob({
         ...initialJob,
         status: 'error',
         stage: 'error',
         message: 'Browser conversion failed.',
-        error: conversionError.message,
+        error: message,
       });
     }
+  }
+
+  function startServerFallbackJob(reason, noticeMessage) {
+    setError('');
+    setNotice(
+      noticeMessage ||
+      (reason
+        ? `Browser conversion failed, so backend conversion started automatically. ${formatJobError(reason)}`
+        : 'Browser conversion failed, so backend conversion started automatically.'),
+    );
+    setIsSubmitting(true);
+    setClientUploadProgress(0);
+    setJob({
+      ...initialJob,
+      status: 'running',
+      stage: 'receiving',
+      message: 'Sending source files to the backend converter.',
+    });
+
+    const form = new FormData();
+    form.append('mp3', mp3File);
+    form.append('image', imageFile);
+    form.append('mode', mode);
+    form.append('title', title);
+    form.append('description', description);
+    form.append('privacyStatus', privacyStatus);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_URL}/api/jobs`);
+    xhr.withCredentials = true;
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.round((event.loaded / event.total) * 100);
+      setClientUploadProgress(percent);
+      setJob((current) => ({
+        ...current,
+        stage: 'receiving',
+        progress: Math.min(10, Math.round(percent * 0.1)),
+        message: `Sending source files ${percent}%`,
+      }));
+    };
+
+    xhr.onload = () => {
+      let data;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = {};
+      }
+
+      if (xhr.status >= 400 || !data.jobId) {
+        const fallbackError = data.error || 'Could not start backend conversion.';
+        setIsSubmitting(false);
+        setError(fallbackError);
+        setJob({
+          ...initialJob,
+          status: 'error',
+          stage: 'error',
+          message: 'Backend conversion failed.',
+          error: fallbackError,
+        });
+        return;
+      }
+
+      setClientUploadProgress(100);
+      setIsSubmitting(false);
+      subscribeToJob(data.jobId);
+    };
+
+    xhr.onerror = () => {
+      const fallbackError = 'Network error while sending files to the backend converter.';
+      setIsSubmitting(false);
+      setError(fallbackError);
+      setJob({
+        ...initialJob,
+        status: 'error',
+        stage: 'error',
+        message: 'Backend conversion failed.',
+        error: fallbackError,
+      });
+    };
+
+    xhr.send(form);
   }
 
   function sendClientMp4ToYoutube(mp4Blob) {
@@ -362,7 +462,7 @@ function App() {
   const canStart =
     Boolean(mp3File && imageFile) &&
     !isSubmitting &&
-    !['running', 'uploading'].includes(job.status) &&
+    !['queued', 'running', 'uploading'].includes(job.status) &&
     !(mode === 'youtube' && !youtube.connected);
 
   const activeStatus = getActiveStatus(job);
@@ -589,9 +689,15 @@ function App() {
               <CardContent className="space-y-4">
                 <ProgressRow
                   icon={UploadCloud}
-                  label={job.stage === 'transferring' ? 'Sending MP4' : 'Preparing files'}
+                  label={
+                    job.stage === 'transferring'
+                      ? 'Sending MP4'
+                      : job.stage === 'receiving'
+                        ? 'Sending files'
+                        : 'Preparing files'
+                  }
                   value={clientUploadProgress}
-                  active={['loading', 'preparing', 'transferring'].includes(job.stage)}
+                  active={['loading', 'preparing', 'receiving', 'transferring'].includes(job.stage)}
                 />
                 <ProgressRow
                   icon={RefreshCcw}
@@ -774,7 +880,7 @@ function ChannelMetric({ label, value }) {
 function getActiveStatus(job) {
   if (job.status === 'completed') return { label: 'Complete', variant: 'success' };
   if (job.status === 'error') return { label: 'Needs attention', variant: 'warning' };
-  if (['running', 'uploading'].includes(job.status)) return { label: 'Working', variant: 'default' };
+  if (['queued', 'running', 'uploading'].includes(job.status)) return { label: 'Working', variant: 'default' };
   return { label: 'Ready', variant: 'secondary' };
 }
 
@@ -817,6 +923,18 @@ function formatJobError(message) {
     return `${message.slice(0, 260)}...`;
   }
   return message;
+}
+
+function getErrorMessage(error, fallback) {
+  if (!error) return fallback;
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string') return error;
+  return fallback;
+}
+
+function shouldUseBackendFirst(audioFile, imageFile) {
+  const totalBytes = (audioFile?.size || 0) + (imageFile?.size || 0);
+  return totalBytes > CLIENT_CONVERSION_SOFT_LIMIT_BYTES;
 }
 
 export default App;
