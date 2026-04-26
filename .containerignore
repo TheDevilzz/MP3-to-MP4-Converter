@@ -4,6 +4,7 @@ node_modules
 client/node_modules
 server/node_modules
 client/dist
+client/public/ffmpeg
 npm-debug.log
 README.md
 docs

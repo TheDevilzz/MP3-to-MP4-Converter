@@ -27,6 +27,7 @@ import { Switch } from './components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Textarea } from './components/ui/textarea';
 import { cn } from './lib/utils';
+import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -43,6 +44,7 @@ const initialJob = {
 
 function App() {
   const eventSourceRef = useRef(null);
+  const downloadHrefRef = useRef('');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const [mp3File, setMp3File] = useState(null);
@@ -59,6 +61,7 @@ function App() {
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
   const [job, setJob] = useState(initialJob);
   const [clientUploadProgress, setClientUploadProgress] = useState(0);
+  const [downloadHref, setDownloadHref] = useState('');
   const [notice, setNotice] = useState(() =>
     initialQuery.get('youtube') === 'connected' ? 'YouTube connected.' : '',
   );
@@ -124,6 +127,12 @@ function App() {
     };
   }, [imagePreviewUrl]);
 
+  useEffect(() => {
+    return () => {
+      if (downloadHrefRef.current) URL.revokeObjectURL(downloadHrefRef.current);
+    };
+  }, []);
+
   async function loginWithYoutube() {
     setError('');
     const response = await fetch(`${API_URL}/api/youtube/auth-url`, {
@@ -151,8 +160,13 @@ function App() {
   }
 
   function startJob() {
+    runClientJob();
+  }
+
+  async function runClientJob() {
     setError('');
     setNotice('');
+    clearDownloadHref();
 
     if (!mp3File || !imageFile) {
       setError('Please add both MP3 and cover image.');
@@ -167,51 +181,138 @@ function App() {
     eventSourceRef.current?.close();
     setIsSubmitting(true);
     setClientUploadProgress(0);
-    setJob({ ...initialJob, status: 'uploading', stage: 'receiving', message: 'Receiving files' });
+    setJob({
+      ...initialJob,
+      status: 'running',
+      stage: 'loading',
+      message: 'Loading browser FFmpeg engine.',
+    });
 
-    const form = new FormData();
-    form.append('mp3', mp3File);
-    form.append('image', imageFile);
-    form.append('mode', mode);
-    form.append('title', title);
-    form.append('description', description);
-    form.append('privacyStatus', privacyStatus);
+    try {
+      const mp4Blob = await convertMp3ImageToMp4({
+        audioFile: mp3File,
+        imageFile,
+        onStage: (stage) => {
+          if (stage === 'loading') {
+            setJob((current) => ({
+              ...current,
+              stage: 'loading',
+              message: 'Loading browser FFmpeg engine.',
+            }));
+          }
+          if (stage === 'preparing') {
+            setJob((current) => ({
+              ...current,
+              stage: 'preparing',
+              message: 'Preparing files in browser memory.',
+            }));
+          }
+        },
+        onProgress: (percent) => {
+          setClientUploadProgress(percent >= 12 ? 100 : Math.round(percent * 8));
+          setJob((current) => ({
+            ...current,
+            status: 'running',
+            stage: percent >= 12 ? 'converting' : current.stage,
+            convertProgress: percent >= 12 ? percent : 0,
+            progress: mode === 'youtube'
+              ? Math.min(72, Math.round(percent * 0.72))
+              : percent,
+            message: percent >= 12
+              ? `Converting in browser ${percent}%`
+              : 'Loading browser FFmpeg engine.',
+          }));
+        },
+      });
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_URL}/api/jobs`);
-    xhr.withCredentials = true;
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        setClientUploadProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      setIsSubmitting(false);
-      let data;
-      try {
-        data = JSON.parse(xhr.responseText);
-      } catch {
-        data = {};
-      }
-
-      if (xhr.status >= 400) {
-        setError(data.error || 'Could not start conversion.');
-        setJob({ ...initialJob, status: 'error', stage: 'error', message: 'Failed' });
+      if (mode === 'download') {
+        const href = URL.createObjectURL(mp4Blob);
+        setDownloadObjectUrl(href);
+        setClientUploadProgress(100);
+        setJob({
+          ...initialJob,
+          status: 'completed',
+          stage: 'ready',
+          progress: 100,
+          convertProgress: 100,
+          message: 'Your MP4 was created in this browser.',
+          outputBytes: mp4Blob.size,
+        });
+        setIsSubmitting(false);
         return;
       }
 
-      setClientUploadProgress(100);
-      subscribeToJob(data.jobId);
-    };
-
-    xhr.onerror = () => {
+      setJob((current) => ({
+        ...current,
+        stage: 'transferring',
+        convertProgress: 100,
+        progress: 72,
+        message: 'Sending converted MP4 to the upload service.',
+      }));
+      setClientUploadProgress(0);
+      const jobId = await sendClientMp4ToYoutube(mp4Blob);
       setIsSubmitting(false);
-      setError('Network error while uploading files.');
-    };
+      subscribeToJob(jobId);
+    } catch (conversionError) {
+      setIsSubmitting(false);
+      setError(conversionError.message || 'Browser conversion failed.');
+      setJob({
+        ...initialJob,
+        status: 'error',
+        stage: 'error',
+        message: 'Browser conversion failed.',
+        error: conversionError.message,
+      });
+    }
+  }
 
-    xhr.send(form);
+  function sendClientMp4ToYoutube(mp4Blob) {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append('video', mp4Blob, `${slugifyTitle(title)}.mp4`);
+      form.append('title', title);
+      form.append('description', description);
+      form.append('privacyStatus', privacyStatus);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_URL}/api/jobs/client-youtube`);
+      xhr.withCredentials = true;
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setClientUploadProgress(percent);
+        setJob((current) => ({
+          ...current,
+          stage: 'transferring',
+          progress: Math.min(82, 72 + Math.round(percent * 0.1)),
+          message: `Sending converted MP4 ${percent}%`,
+        }));
+      };
+
+      xhr.onload = () => {
+        let data;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          data = {};
+        }
+
+        if (xhr.status >= 400) {
+          reject(new Error(data.error || 'Could not start YouTube upload.'));
+          return;
+        }
+
+        setClientUploadProgress(100);
+        resolve(data.jobId);
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error while sending the MP4 to the upload service.'));
+      };
+
+      xhr.send(form);
+    });
   }
 
   function subscribeToJob(jobId) {
@@ -238,11 +339,24 @@ function App() {
 
   function resetWorkbench() {
     eventSourceRef.current?.close();
+    clearDownloadHref();
     setJob(initialJob);
     setClientUploadProgress(0);
     setError('');
     setNotice('');
     setIsSubmitting(false);
+  }
+
+  function setDownloadObjectUrl(href) {
+    clearDownloadHref();
+    downloadHrefRef.current = href;
+    setDownloadHref(href);
+  }
+
+  function clearDownloadHref() {
+    if (downloadHrefRef.current) URL.revokeObjectURL(downloadHrefRef.current);
+    downloadHrefRef.current = '';
+    setDownloadHref('');
   }
 
   const canStart =
@@ -475,9 +589,9 @@ function App() {
               <CardContent className="space-y-4">
                 <ProgressRow
                   icon={UploadCloud}
-                  label="Receiving files"
+                  label={job.stage === 'transferring' ? 'Sending MP4' : 'Preparing files'}
                   value={clientUploadProgress}
-                  active={job.stage === 'receiving'}
+                  active={['loading', 'preparing', 'transferring'].includes(job.stage)}
                 />
                 <ProgressRow
                   icon={RefreshCcw}
@@ -517,9 +631,12 @@ function App() {
                   </div>
                 )}
 
-                {job.status === 'completed' && job.downloadUrl && (
+                {job.status === 'completed' && (downloadHref || job.downloadUrl) && (
                   <Button asChild className="w-full" size="lg">
-                    <a href={`${API_URL}${job.downloadUrl}`}>
+                    <a
+                      href={downloadHref || `${API_URL}${job.downloadUrl}`}
+                      download={`${slugifyTitle(title)}.mp4`}
+                    >
                       <Download aria-hidden="true" />
                       Download MP4
                     </a>
@@ -668,6 +785,16 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
 
+function slugifyTitle(value) {
+  return (
+    String(value || 'converted-mp3-video')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 70) || 'converted-mp3-video'
+  );
+}
+
 function formatCount(value) {
   if (value === null || value === undefined || value === '') return 'Hidden';
   const number = Number(value);
@@ -682,6 +809,9 @@ function formatJobError(message) {
   }
   if (message.includes('Could not read MP3 duration')) {
     return 'Could not read the MP3 duration. Try another MP3 file or re-export the audio.';
+  }
+  if (message.includes('Browser FFmpeg')) {
+    return 'Browser conversion failed. Try a smaller MP3/image, or use a desktop browser with more memory.';
   }
   if (message.length > 260) {
     return `${message.slice(0, 260)}...`;

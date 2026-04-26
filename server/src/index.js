@@ -59,7 +59,8 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const isAudio = file.fieldname === 'mp3' && file.mimetype.includes('audio');
     const isImage = file.fieldname === 'image' && file.mimetype.includes('image');
-    cb(null, isAudio || isImage);
+    const isVideo = file.fieldname === 'video' && file.mimetype.includes('video');
+    cb(null, isAudio || isImage || isVideo);
   },
 });
 
@@ -134,6 +135,69 @@ app.get('/api/youtube/callback', async (req, res) => {
 app.post('/api/youtube/disconnect', (req, res) => {
   disconnectYoutubeSession(req, res);
   res.json({ connected: false });
+});
+
+app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const video = req.file;
+    const session = getYoutubeSession(req);
+    const title = String(body.title || 'Converted MP3 Video').trim();
+    const description = String(body.description || '').trim();
+    const privacyStatus = String(body.privacyStatus || 'private');
+
+    if (!video) {
+      await cleanupUploadDir(req.uploadDir);
+      return res.status(400).json({ error: 'Please send the converted MP4 file.' });
+    }
+
+    if (!session) {
+      await cleanupUploadDir(req.uploadDir);
+      return res.status(401).json({ error: 'Connect YouTube before uploading.' });
+    }
+
+    const job = createJob({
+      dir: req.uploadDir,
+      audioPath: null,
+      imagePath: null,
+      outputPath: video.path,
+      mode: 'youtube',
+      title,
+      description,
+      privacyStatus,
+      youtubeSessionId: session.id,
+      downloadUrl: null,
+      youtubeUrl: null,
+      youtubeVideoId: null,
+      outputBytes: video.size,
+      convertProgress: 100,
+      uploadProgress: 0,
+      progress: 82,
+      status: 'queued',
+      stage: 'uploading',
+      message: 'Converted MP4 received. Queued for YouTube upload.',
+    });
+
+    res.status(202).json({
+      jobId: job.id,
+      eventUrl: `/api/jobs/${job.id}/events`,
+      statusUrl: `/api/jobs/${job.id}`,
+    });
+
+    setImmediate(() => {
+      processClientYoutubeJob(job.id).catch((error) => {
+        patchJob(job.id, {
+          status: 'error',
+          stage: 'error',
+          error: error.message,
+          message: 'The YouTube upload failed.',
+        });
+        cleanupJobFiles(job.id).catch(() => {});
+      });
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'image', maxCount: 1 }]), async (req, res, next) => {
@@ -359,10 +423,55 @@ async function processJob(id) {
   });
 }
 
+async function processClientYoutubeJob(id) {
+  const job = getJob(id);
+  if (!job) return;
+
+  const session = getYoutubeSessionById(job.youtubeSessionId);
+  if (!session) throw new Error('YouTube session expired. Please connect again.');
+
+  patchJob(id, {
+    status: 'running',
+    stage: 'uploading',
+    convertProgress: 100,
+    uploadProgress: 0,
+    progress: 82,
+    message: 'Uploading browser-converted MP4 to YouTube.',
+  });
+
+  const result = await uploadVideoToYoutube({
+    session,
+    filePath: job.outputPath,
+    title: job.title,
+    description: job.description,
+    privacyStatus: job.privacyStatus,
+    onProgress: (percent) => {
+      patchJob(id, {
+        stage: 'uploading',
+        uploadProgress: percent,
+        progress: Math.min(99, 82 + Math.round(percent * 0.18)),
+        message: `Uploading ${percent}%`,
+      });
+    },
+  });
+
+  await cleanupJobFiles(id);
+  patchJob(id, {
+    status: 'completed',
+    stage: 'uploaded',
+    progress: 100,
+    uploadProgress: 100,
+    youtubeVideoId: result.videoId,
+    youtubeUrl: result.url,
+    message: 'Uploaded to YouTube and temporary files were cleaned.',
+  });
+}
+
 function safeExtension(filename, mimeType) {
   const ext = path.extname(filename || '').toLowerCase();
   if (ext && ext.length <= 8) return ext;
   if (mimeType.includes('mpeg')) return '.mp3';
+  if (mimeType.includes('mp4')) return '.mp4';
   if (mimeType.includes('png')) return '.png';
   if (mimeType.includes('webp')) return '.webp';
   return '.jpg';

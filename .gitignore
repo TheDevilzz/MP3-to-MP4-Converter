@@ -2,6 +2,7 @@ node_modules/
 client/node_modules/
 server/node_modules/
 client/dist/
+client/public/ffmpeg/
 .env
 .env.local
 *.log

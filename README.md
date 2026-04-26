@@ -1,14 +1,14 @@
 # MP3 to MP4 Studio
 
-Full-stack React (Vite) + Express app สำหรับแปลง MP3 + cover image เป็น MP4, แสดง progress แบบ realtime ด้วย SSE, ดาวน์โหลดไฟล์ หรืออัปโหลดขึ้น YouTube ผ่าน Google OAuth2 + YouTube Data API v3
+Full-stack React (Vite) + Express app สำหรับแปลง MP3 + cover image เป็น MP4 ใน browser ด้วย FFmpeg WebAssembly, ดาวน์โหลดไฟล์ หรือส่ง MP4 ที่แปลงเสร็จแล้วให้ backend อัปโหลดขึ้น YouTube ผ่าน Google OAuth2 + YouTube Data API v3
 
 ## ฟีเจอร์หลัก
 
 - Frontend: React, Vite, Tailwind CSS, shadcn-style UI primitives, dark mode
-- Backend: Express, FFmpeg/FFprobe, Multer temp upload, SSE realtime job progress
-- Conversion: MP3 + image เป็น H.264/AAC MP4 พร้อม compression settings
+- Browser conversion: FFmpeg WebAssembly แปลง MP3 + image เป็น H.264/AAC MP4 ในเครื่องผู้ใช้
+- Backend: Express, Multer temp upload สำหรับ MP4 ที่แปลงแล้ว, SSE realtime YouTube upload progress
 - YouTube: OAuth2 connect flow และ `videos.insert` upload
-- Cleanup: ใช้ temp directory ต่อ job และลบทิ้งหลัง download, upload สำเร็จ, error หรือหมดอายุ
+- Cleanup: download mode ไม่อัปโหลดไฟล์ขึ้น server; YouTube mode ลบ MP4 ชั่วคราวหลัง upload สำเร็จ, error หรือหมดอายุ
 - Podman: มี `Containerfile` และ `podman-compose.yml`
 
 ## โครงสร้างโปรเจกต์
@@ -16,7 +16,8 @@ Full-stack React (Vite) + Express app สำหรับแปลง MP3 + cover
 ```text
 client/                 React Vite frontend
 server/                 Express backend
-server/src/ffmpeg.js    FFmpeg conversion + progress parser
+client/src/lib/clientFfmpeg.js Browser FFmpeg conversion
+server/src/ffmpeg.js    Server-side fallback conversion + progress parser
 server/src/youtube.js   Google OAuth2 + YouTube upload
 Containerfile           Podman image build
 podman-compose.yml      Podman Compose service
@@ -25,7 +26,7 @@ podman-compose.yml      Podman Compose service
 
 ## ติดตั้งแบบ Development
 
-ต้องมี Node.js และ npm ในเครื่องก่อน โดยโปรเจกต์มี FFmpeg/FFprobe binary fallback จาก npm ให้แล้ว ถ้าต้องการใช้ FFmpeg จากเครื่องเองให้ตั้ง `FFMPEG_PATH` และ `FFPROBE_PATH` ใน `.env`
+ต้องมี Node.js และ npm ในเครื่องก่อน
 
 ```powershell
 Copy-Item .env.example .env
@@ -36,14 +37,16 @@ npm.cmd run dev
 
 เปิดเว็บที่ `http://localhost:5173` และ backend จะอยู่ที่ `http://localhost:4000`
 
-ตรวจ FFmpeg จากเครื่องเองถ้าตั้ง path แบบ manual:
+ระบบจะ copy FFmpeg WASM assets จาก `node_modules/@ffmpeg/core` ไปที่ `client/public/ffmpeg` อัตโนมัติก่อน `dev` และ `build`
+
+ถ้าต้องการตรวจ FFmpeg ฝั่ง backend fallback:
 
 ```powershell
 ffmpeg -version
 ffprobe -version
 ```
 
-ถ้าต้องการติดตั้ง FFmpeg ลง Windows โดยตรง:
+ถ้าต้องการติดตั้ง FFmpeg ลง Windows โดยตรงสำหรับ server-side fallback:
 
 ```powershell
 winget install Gyan.FFmpeg
@@ -138,10 +141,13 @@ AUDIO_BITRATE=192k
 - `GET /api/youtube/status`
 - `GET /api/youtube/auth-url`
 - `GET /api/youtube/callback`
-- `POST /api/jobs` multipart fields: `mp3`, `image`, `mode`, `title`, `description`, `privacyStatus`
+- `POST /api/jobs` server-side fallback multipart fields: `mp3`, `image`, `mode`, `title`, `description`, `privacyStatus`
+- `POST /api/jobs/client-youtube` multipart fields: `video`, `title`, `description`, `privacyStatus`
 - `GET /api/jobs/:id/events` SSE realtime progress
 - `GET /api/jobs/:id/download`
 
 ## หมายเหตุด้าน production
 
 ตัวอย่างนี้เก็บ OAuth token ใน memory session เพื่อไม่เขียนข้อมูลถาวรลง server ถ้าจะใช้ production หลาย instance ควรเปลี่ยนเป็น encrypted session store ภายนอก และเปิด HTTPS พร้อม `COOKIE_SECURE=true`
+
+Client-side conversion ใช้ RAM/CPU ของ browser ผู้ใช้ ไฟล์ใหญ่มากอาจช้าหรือ memory ไม่พอบนมือถือ แนะนำจำกัดขนาดไฟล์และแสดงคำเตือนใน production
