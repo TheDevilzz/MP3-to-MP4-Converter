@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 const CORE_URL = '/ffmpeg/ffmpeg-core.js';
 const WASM_URL = '/ffmpeg/ffmpeg-core.wasm';
@@ -12,6 +12,7 @@ let ffmpeg;
 let loadingPromise;
 let progressListenerRegistered = false;
 let currentProgressHandler = null;
+let coreAssetPromise;
 
 export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onProgress }) {
   if (!audioFile || !imageFile) {
@@ -118,10 +119,7 @@ async function loadFfmpeg(onLoadProgress) {
   if (!loadingPromise) {
     onLoadProgress?.(0.1);
     loadingPromise = ffmpeg
-      .load({
-        coreURL: CORE_URL,
-        wasmURL: WASM_URL,
-      })
+      .load(await getFfmpegCoreAssets())
       .then(() => {
         onLoadProgress?.(1);
         return ffmpeg;
@@ -133,6 +131,20 @@ async function loadFfmpeg(onLoadProgress) {
   }
 
   return loadingPromise;
+}
+
+async function getFfmpegCoreAssets() {
+  if (!coreAssetPromise) {
+    const coreUrl = new URL(CORE_URL, window.location.origin).toString();
+    const wasmUrl = new URL(WASM_URL, window.location.origin).toString();
+
+    coreAssetPromise = Promise.all([
+      toBlobURL(coreUrl, 'text/javascript'),
+      toBlobURL(wasmUrl, 'application/wasm'),
+    ]).then(([coreURL, wasmURL]) => ({ coreURL, wasmURL }));
+  }
+
+  return coreAssetPromise;
 }
 
 async function cleanupVirtualFile(engine, filename) {

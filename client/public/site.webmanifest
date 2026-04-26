@@ -1,0 +1,17 @@
+{
+  "name": "MP3 to MP4 Studio",
+  "short_name": "MP3 to MP4",
+  "description": "Convert MP3 audio and cover art into MP4 videos in your browser, then download or upload to YouTube.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

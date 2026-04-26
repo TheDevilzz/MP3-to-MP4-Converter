@@ -112,7 +112,10 @@ app.get('/api/youtube/auth-url', (_req, res) => {
 
 app.get('/api/youtube/callback', async (req, res) => {
   try {
-    const { code, state } = req.query;
+    const { code, state, error, error_description: errorDescription } = req.query;
+    if (error) {
+      throw new Error(String(errorDescription || error));
+    }
     if (!code || !state) throw new Error('Missing OAuth code or state.');
 
     const sessionId = await completeYoutubeOAuth({ code, state });
