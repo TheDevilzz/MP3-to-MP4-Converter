@@ -1,0 +1,20 @@
+services:
+  converter:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    image: mp3-to-mp4-youtube:latest
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:4000}
+      SERVER_PUBLIC_URL: ${SERVER_PUBLIC_URL:-http://localhost:4000}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:4000/api/youtube/callback}
+      TEMP_DIR: /tmp/mp3-to-mp4-converter
+    restart: unless-stopped
