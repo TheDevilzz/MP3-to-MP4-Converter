@@ -165,13 +165,13 @@ app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
 
     const body = req.body || {};
     const fileSize = Number(body.fileSize || 0);
-    const maxBytes = config.maxUploadMb * 1024 * 1024;
+    const maxBytes = config.clientYoutubeMaxUploadMb * 1024 * 1024;
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
       return res.status(400).json({ error: 'Invalid converted MP4 size.' });
     }
     if (fileSize > maxBytes) {
       return res.status(413).json({
-        error: `Converted MP4 is larger than the ${config.maxUploadMb}MB server limit.`,
+        error: `Converted MP4 is larger than the ${config.clientYoutubeMaxUploadMb}MB server limit.`,
       });
     }
 

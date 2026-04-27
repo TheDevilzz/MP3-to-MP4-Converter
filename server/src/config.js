@@ -25,6 +25,7 @@ export const config = {
   tempRoot:
     process.env.TEMP_DIR || path.join(os.tmpdir(), 'mp3-to-mp4-converter'),
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 250),
+  clientYoutubeMaxUploadMb: Number(process.env.CLIENT_YOUTUBE_MAX_UPLOAD_MB || 2048),
   maxJobAgeMs: Number(process.env.MAX_JOB_AGE_MS || 1000 * 60 * 60),
   ffmpegPath: process.env.FFMPEG_PATH || bundledFfmpegPath,
   ffprobePath: process.env.FFPROBE_PATH || bundledFfprobePath,
