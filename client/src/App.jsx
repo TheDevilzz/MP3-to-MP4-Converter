@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
+  BookOpenText,
   CheckCircle2,
   CircleAlert,
   CircleUserRound,
   Download,
   ExternalLink,
   FileAudio,
+  HeartHandshake,
   Image,
   Loader2,
   Moon,
   Play,
-  PlugZap,
-  RefreshCcw,
+  Plus,
   ShieldCheck,
   Sun,
+  Trash2,
   TvMinimalPlay,
   UploadCloud,
 } from 'lucide-react';
@@ -34,37 +38,32 @@ const API_URL =
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
 const CLIENT_YOUTUBE_CHUNK_BYTES = 8 * 1024 * 1024;
 
-const initialJob = {
-  status: 'idle',
-  stage: 'idle',
-  progress: 0,
-  convertProgress: 0,
-  uploadProgress: 0,
-  message: 'Idle',
-};
-
 function App() {
   const eventSourceRef = useRef(null);
-  const downloadHrefRef = useRef('');
-  const conversionStartedAtRef = useRef(null);
-  const conversionPhaseRef = useRef('idle');
+  const queueRef = useRef([]);
+  const phaseRef = useRef({});
+  const conversionStartedAtRef = useRef({});
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [mp3File, setMp3File] = useState(null);
-  const [imageFile, setImageFile] = useState(null);
-  const [mode, setMode] = useState('download');
-  const [title, setTitle] = useState('Converted MP3 Video');
-  const [description, setDescription] = useState('');
-  const [privacyStatus, setPrivacyStatus] = useState('private');
+  const [view, setView] = useState('studio');
+
+  const [editorMp3File, setEditorMp3File] = useState(null);
+  const [editorImageFile, setEditorImageFile] = useState(null);
+  const [editorMode, setEditorMode] = useState('download');
+  const [editorTitle, setEditorTitle] = useState('Converted MP3 Video');
+  const [editorDescription, setEditorDescription] = useState('');
+  const [editorPrivacyStatus, setEditorPrivacyStatus] = useState('private');
+
+  const [queueItems, setQueueItems] = useState([]);
+  const [activeItemId, setActiveItemId] = useState('');
+  const [isQueueRunning, setIsQueueRunning] = useState(false);
+
   const [youtube, setYoutube] = useState({
     configured: false,
     connected: false,
     channel: null,
   });
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
-  const [job, setJob] = useState(initialJob);
-  const [clientUploadProgress, setClientUploadProgress] = useState(0);
-  const [downloadHref, setDownloadHref] = useState('');
   const [notice, setNotice] = useState(() =>
     initialQuery.get('youtube') === 'connected' ? 'YouTube connected.' : '',
   );
@@ -73,17 +72,28 @@ function App() {
       ? initialQuery.get('message') || 'YouTube connection failed.'
       : '',
   );
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const imagePreviewUrl = useMemo(() => {
-    if (!imageFile) return null;
-    return URL.createObjectURL(imageFile);
-  }, [imageFile]);
+  const activeItem = queueItems.find((item) => item.id === activeItemId) || null;
+  const activeStatus = getActiveStatus(isQueueRunning, queueItems);
+  const editorImagePreviewUrl = useMemo(() => {
+    if (!editorImageFile) return null;
+    return URL.createObjectURL(editorImageFile);
+  }, [editorImageFile]);
+
+  useEffect(() => {
+    queueRef.current = queueItems;
+  }, [queueItems]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      if (editorImagePreviewUrl) URL.revokeObjectURL(editorImagePreviewUrl);
+    };
+  }, [editorImagePreviewUrl]);
 
   useEffect(() => {
     let active = true;
@@ -113,26 +123,14 @@ function App() {
         }
       });
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('youtube')) {
+    if (new URLSearchParams(window.location.search).has('youtube')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
     return () => {
       active = false;
       eventSourceRef.current?.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
-    };
-  }, [imagePreviewUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (downloadHrefRef.current) URL.revokeObjectURL(downloadHrefRef.current);
+      cleanupQueueUrls(queueRef.current);
     };
   }, []);
 
@@ -162,147 +160,250 @@ function App() {
     setYoutube((current) => ({ ...current, connected: false, channel: null }));
   }
 
-  function startJob() {
-    runClientJob();
-  }
-
-  async function runClientJob() {
+  function addQueueItem() {
     setError('');
     setNotice('');
-    clearDownloadHref();
 
-    if (!mp3File || !imageFile) {
-      setError('Please add both MP3 and cover image.');
+    if (!editorMp3File || !editorImageFile) {
+      setError('Please add both MP3 and cover image before adding to queue.');
+      return;
+    }
+    if (editorMode === 'youtube' && !editorTitle.trim()) {
+      setError('Please set a YouTube title for this queue item.');
       return;
     }
 
-    if (mode === 'youtube' && !youtube.connected) {
-      setError('Connect YouTube before uploading.');
+    const itemId = crypto.randomUUID();
+    const imagePreviewUrl = URL.createObjectURL(editorImageFile);
+
+    const newItem = {
+      id: itemId,
+      createdAt: Date.now(),
+      mp3File: editorMp3File,
+      imageFile: editorImageFile,
+      imagePreviewUrl,
+      mode: editorMode,
+      title: editorTitle.trim() || 'Converted MP3 Video',
+      description: editorDescription.trim(),
+      privacyStatus: editorPrivacyStatus,
+      status: 'queued',
+      stage: 'queued',
+      progress: 0,
+      convertProgress: 0,
+      uploadProgress: 0,
+      transferProgress: 0,
+      message: 'Queued',
+      error: '',
+      etaText: '',
+      outputBytes: 0,
+      downloadHref: '',
+      youtubeUrl: '',
+      youtubeVideoId: '',
+    };
+
+    setQueueItems((prev) => [...prev, newItem]);
+    setActiveItemId(itemId);
+    setEditorMp3File(null);
+    setEditorImageFile(null);
+    setEditorDescription('');
+    setEditorTitle('Converted MP3 Video');
+    setNotice('Queue item added.');
+  }
+
+  function removeQueueItem(id) {
+    if (isQueueRunning) return;
+
+    setQueueItems((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.downloadHref) URL.revokeObjectURL(target.downloadHref);
+      if (target?.imagePreviewUrl) URL.revokeObjectURL(target.imagePreviewUrl);
+      const next = prev.filter((item) => item.id !== id);
+      if (activeItemId === id) setActiveItemId(next[0]?.id || '');
+      return next;
+    });
+  }
+
+  function moveQueueItem(id, direction) {
+    if (isQueueRunning) return;
+
+    setQueueItems((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index < 0) return prev;
+      const nextIndex = direction === 'up' ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const clone = [...prev];
+      const [item] = clone.splice(index, 1);
+      clone.splice(nextIndex, 0, item);
+      return clone;
+    });
+  }
+
+  function clearQueue() {
+    if (isQueueRunning) return;
+    cleanupQueueUrls(queueItems);
+    setQueueItems([]);
+    setActiveItemId('');
+    setError('');
+    setNotice('Queue cleared.');
+  }
+
+  async function startQueue() {
+    if (isQueueRunning) return;
+    if (!queueRef.current.length) {
+      setError('Please add at least one queue item first.');
       return;
     }
 
-    eventSourceRef.current?.close();
-    setIsSubmitting(true);
-    setClientUploadProgress(0);
-    conversionStartedAtRef.current = null;
-    conversionPhaseRef.current = 'loading';
-    setJob({
-      ...initialJob,
+    setError('');
+    setNotice('');
+    setIsQueueRunning(true);
+
+    try {
+      while (true) {
+        const next = queueRef.current.find((item) => item.status === 'queued');
+        if (!next) break;
+        await processQueueItem(next.id);
+      }
+      setNotice('Queue finished.');
+    } finally {
+      setIsQueueRunning(false);
+      eventSourceRef.current?.close();
+    }
+  }
+
+  async function processQueueItem(itemId) {
+    const item = queueRef.current.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+
+    setActiveItemId(itemId);
+    phaseRef.current[itemId] = 'loading';
+    conversionStartedAtRef.current[itemId] = null;
+
+    updateQueueItem(itemId, {
       status: 'running',
       stage: 'loading',
       message: 'Loading browser FFmpeg engine.',
+      progress: 0,
+      convertProgress: 0,
+      uploadProgress: 0,
+      transferProgress: 0,
+      error: '',
+      etaText: '',
+      youtubeUrl: '',
+      youtubeVideoId: '',
     });
 
     try {
       const mp4Blob = await convertMp3ImageToMp4({
-        audioFile: mp3File,
-        imageFile,
+        audioFile: item.mp3File,
+        imageFile: item.imageFile,
         onStage: (stage) => {
-          conversionPhaseRef.current = stage;
-          if (stage === 'loading') {
-            setJob((current) => ({
-              ...current,
-              stage: 'loading',
-              message: 'Loading browser FFmpeg engine.',
-            }));
-          }
+          phaseRef.current[itemId] = stage;
           if (stage === 'preparing') {
-            conversionStartedAtRef.current = null;
-            setJob((current) => ({
-              ...current,
+            conversionStartedAtRef.current[itemId] = null;
+            updateQueueItem(itemId, {
               stage: 'preparing',
               message: 'Preparing files in browser memory.',
-            }));
+            });
+            return;
+          }
+          if (stage === 'loading') {
+            updateQueueItem(itemId, {
+              stage: 'loading',
+              message: 'Loading browser FFmpeg engine.',
+            });
+            return;
           }
           if (stage === 'converting') {
-            if (!conversionStartedAtRef.current) {
-              conversionStartedAtRef.current = Date.now();
+            if (!conversionStartedAtRef.current[itemId]) {
+              conversionStartedAtRef.current[itemId] = Date.now();
             }
-            setJob((current) => ({
-              ...current,
+            updateQueueItem(itemId, {
               stage: 'converting',
-              convertProgress: current.stage === 'converting' ? current.convertProgress : 0,
-              message: current.stage === 'converting' ? current.message : 'Converting in browser 0%',
-            }));
+            });
           }
         },
         onProgress: (percent) => {
-          const isConverting = conversionPhaseRef.current === 'converting';
-          const etaText = isConverting ? getConversionEtaText(percent, conversionStartedAtRef) : '';
-          setClientUploadProgress(isConverting ? 100 : Math.min(95, Math.round(percent * 9.5)));
-          setJob((current) => ({
-            ...current,
-            status: 'running',
-            stage: isConverting ? 'converting' : current.stage,
+          const isConverting = phaseRef.current[itemId] === 'converting';
+          const etaText = isConverting
+            ? getConversionEtaText(percent, conversionStartedAtRef.current[itemId])
+            : '';
+
+          updateQueueItem(itemId, {
+            stage: isConverting ? 'converting' : phaseRef.current[itemId] || 'loading',
             convertProgress: isConverting ? percent : 0,
+            transferProgress: isConverting ? 100 : Math.min(95, Math.round(percent * 9.5)),
             progress: isConverting
-              ? (mode === 'youtube' ? Math.min(72, Math.round(percent * 0.72)) : percent)
+              ? item.mode === 'youtube'
+                ? Math.min(72, Math.round(percent * 0.72))
+                : percent
               : 0,
             message: isConverting
               ? `Converting in browser ${percent}%${etaText ? ` - ${etaText}` : ''}`
-              : current.message,
+              : 'Loading browser FFmpeg engine.',
             etaText,
-          }));
+          });
         },
       });
 
-      if (mode === 'download') {
-        const href = URL.createObjectURL(mp4Blob);
-        setDownloadObjectUrl(href);
-        setClientUploadProgress(100);
-        setJob({
-          ...initialJob,
+      if (item.mode === 'download') {
+        const downloadHref = URL.createObjectURL(mp4Blob);
+        updateQueueItem(itemId, {
           status: 'completed',
           stage: 'ready',
           progress: 100,
           convertProgress: 100,
-          message: 'Your MP4 was created in this browser.',
+          transferProgress: 100,
+          uploadProgress: 0,
+          message: 'MP4 created and ready to download.',
           outputBytes: mp4Blob.size,
+          downloadHref,
           etaText: '',
         });
-        setIsSubmitting(false);
         return;
       }
 
-      setJob((current) => ({
-        ...current,
+      if (!youtube.connected) {
+        throw new Error('Connect YouTube before processing YouTube queue items.');
+      }
+
+      updateQueueItem(itemId, {
         stage: 'transferring',
+        transferProgress: 0,
         convertProgress: 100,
         progress: 72,
-        message: 'Sending converted MP4 to the upload service.',
-        etaText: '',
-      }));
-      setClientUploadProgress(0);
-      const jobId = await sendClientMp4ToYoutube(mp4Blob);
-      setIsSubmitting(false);
-      subscribeToJob(jobId);
-    } catch (conversionError) {
-      const message = getErrorMessage(conversionError, 'Browser conversion failed.');
-      setIsSubmitting(false);
-      setError(message);
-      setJob({
-        ...initialJob,
-        status: 'error',
-        stage: 'error',
-        message: 'Browser conversion failed.',
-        error: message,
+        message: 'Sending converted MP4 to upload service.',
         etaText: '',
       });
+
+      const jobId = await sendClientMp4ToYoutube(mp4Blob, itemId, item);
+      await subscribeToYoutubeJob(jobId, itemId);
+    } catch (itemError) {
+      updateQueueItem(itemId, {
+        status: 'error',
+        stage: 'error',
+        message: 'Conversion failed.',
+        error: getErrorMessage(itemError, 'Queue item failed.'),
+        etaText: '',
+      });
+    } finally {
+      delete phaseRef.current[itemId];
+      delete conversionStartedAtRef.current[itemId];
     }
   }
 
-  async function sendClientMp4ToYoutube(mp4Blob) {
+  async function sendClientMp4ToYoutube(mp4Blob, itemId, itemMeta) {
     const { uploadId } = await postJson('/api/jobs/client-youtube/uploads', {
-      fileName: `${slugifyTitle(title)}.mp4`,
+      fileName: `${slugifyTitle(itemMeta.title)}.mp4`,
       fileSize: mp4Blob.size,
-      title,
-      description,
-      privacyStatus,
+      title: itemMeta.title,
+      description: itemMeta.description,
+      privacyStatus: itemMeta.privacyStatus,
     });
-    setClientUploadProgress(1);
 
     let uploadedBytes = 0;
     let chunkIndex = 0;
+    updateQueueItem(itemId, { transferProgress: 1 });
 
     while (uploadedBytes < mp4Blob.size) {
       const start = uploadedBytes;
@@ -330,97 +431,78 @@ function App() {
       uploadedBytes = end;
       chunkIndex += 1;
       const percent = Math.max(1, Math.round((uploadedBytes / mp4Blob.size) * 100));
-      setClientUploadProgress(percent);
-      setJob((current) => ({
-        ...current,
+      updateQueueItem(itemId, {
         stage: 'transferring',
+        transferProgress: percent,
         progress: Math.min(82, 72 + Math.round(percent * 0.1)),
         message: `Sending converted MP4 ${percent}%`,
-      }));
+      });
     }
 
     const data = await postJson(`/api/jobs/client-youtube/uploads/${uploadId}/complete`, {});
-    setClientUploadProgress(100);
+    updateQueueItem(itemId, { transferProgress: 100 });
     return data.jobId;
   }
 
-  async function postJson(pathname, body) {
-    const response = await fetch(`${API_URL}${pathname}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const data = await readJsonResponse(response);
-    if (!response.ok) {
-      throw new Error(data.error || 'Request failed.');
-    }
-    return data;
-  }
-
-  async function readJsonResponse(response) {
-    try {
-      return await response.json();
-    } catch {
-      return {};
-    }
-  }
-
-  function subscribeToJob(jobId) {
+  async function subscribeToYoutubeJob(jobId, itemId) {
     eventSourceRef.current?.close();
-    const source = new EventSource(`${API_URL}/api/jobs/${jobId}/events`, {
-      withCredentials: true,
-    });
-    eventSourceRef.current = source;
 
-    source.addEventListener('job', (event) => {
-      const nextJob = JSON.parse(event.data);
-      setJob(nextJob);
+    await new Promise((resolve, reject) => {
+      const source = new EventSource(`${API_URL}/api/jobs/${jobId}/events`, {
+        withCredentials: true,
+      });
+      eventSourceRef.current = source;
 
-      if (['completed', 'error', 'cancelled'].includes(nextJob.status)) {
+      source.addEventListener('job', (event) => {
+        const nextJob = JSON.parse(event.data);
+        updateQueueItem(itemId, {
+          status: nextJob.status,
+          stage: nextJob.stage,
+          progress: nextJob.progress || 0,
+          convertProgress: nextJob.convertProgress || 100,
+          uploadProgress: nextJob.uploadProgress || 0,
+          message: nextJob.message || '',
+          error: nextJob.error || '',
+          youtubeUrl: nextJob.youtubeUrl || '',
+          youtubeVideoId: nextJob.youtubeVideoId || '',
+          outputBytes: nextJob.outputBytes || 0,
+        });
+
+        if (nextJob.status === 'completed') {
+          source.close();
+          resolve();
+          return;
+        }
+        if (nextJob.status === 'error' || nextJob.status === 'cancelled') {
+          source.close();
+          reject(new Error(nextJob.error || 'YouTube upload failed.'));
+        }
+      });
+
+      source.onerror = () => {
         source.close();
-      }
+        reject(new Error('Realtime connection lost during YouTube upload.'));
+      };
     });
-
-    source.onerror = () => {
-      setError('Realtime connection lost. The job may still be running.');
-      source.close();
-    };
   }
 
-  function resetWorkbench() {
-    eventSourceRef.current?.close();
-    clearDownloadHref();
-    conversionPhaseRef.current = 'idle';
-    conversionStartedAtRef.current = null;
-    setJob(initialJob);
-    setClientUploadProgress(0);
-    setError('');
-    setNotice('');
-    setIsSubmitting(false);
+  function updateQueueItem(id, patch) {
+    setQueueItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        return { ...item, ...patch };
+      }),
+    );
   }
 
-  function setDownloadObjectUrl(href) {
-    clearDownloadHref();
-    downloadHrefRef.current = href;
-    setDownloadHref(href);
+  function setQuickMode(mode) {
+    setEditorMode(mode);
+    setView('studio');
   }
 
-  function clearDownloadHref() {
-    if (downloadHrefRef.current) URL.revokeObjectURL(downloadHrefRef.current);
-    downloadHrefRef.current = '';
-    setDownloadHref('');
-  }
-
-  const canStart =
-    Boolean(mp3File && imageFile) &&
-    !isSubmitting &&
-    !['queued', 'running', 'uploading'].includes(job.status) &&
-    !(mode === 'youtube' && !youtube.connected);
-
-  const activeStatus = getActiveStatus(job);
-  const visibleError = error || formatJobError(job.error);
+  const canAddItem = Boolean(editorMp3File && editorImageFile) && !isQueueRunning;
+  const canStartQueue = queueItems.some((item) => item.status === 'queued') && !isQueueRunning;
+  const visibleError = error || formatJobError(activeItem?.error);
 
   return (
     <main className="min-h-screen">
@@ -431,10 +513,8 @@ function App() {
               <FileAudio className="size-5 text-primary" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-xl font-extrabold tracking-normal sm:text-2xl">
-                MP3 to MP4 Studio
-              </h1>
-              <p className="text-sm text-muted-foreground">Convert, compress, deliver.</p>
+              <h1 className="text-xl font-extrabold tracking-normal sm:text-2xl">MP3 to MP4 Studio</h1>
+              <p className="text-sm text-muted-foreground">Queue, convert, and publish in order.</p>
             </div>
           </div>
 
@@ -452,291 +532,422 @@ function App() {
           </div>
         </header>
 
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-          <div className="space-y-5">
-            {health.checked && !health.ok && (
-              <div
-                role="alert"
-                className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200"
-              >
-                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <div>
-                  <p className="font-semibold">Backend needs attention</p>
-                  <p className="mt-1 text-amber-700 dark:text-amber-200/80">
-                    {formatJobError(health.error)}
-                  </p>
-                </div>
-              </div>
-            )}
+        <Tabs value={view} onValueChange={setView} className="space-y-5">
+          <TabsList className="grid w-full grid-cols-3 sm:w-[420px]">
+            <TabsTrigger value="studio">
+              <FileAudio aria-hidden="true" />
+              Studio
+            </TabsTrigger>
+            <TabsTrigger value="docs">
+              <BookOpenText aria-hidden="true" />
+              Docs
+            </TabsTrigger>
+            <TabsTrigger value="donate">
+              <HeartHandshake aria-hidden="true" />
+              Donate
+            </TabsTrigger>
+          </TabsList>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Source files</CardTitle>
-                <CardDescription>MP3 audio and square or landscape cover art.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                <FileDrop
-                  accept="audio/mpeg,audio/mp3"
-                  file={mp3File}
-                  icon={FileAudio}
-                  label="MP3 file"
-                  onChange={setMp3File}
-                />
-                <FileDrop
-                  accept="image/png,image/jpeg,image/webp"
-                  file={imageFile}
-                  icon={Image}
-                  label="Cover image"
-                  previewUrl={imagePreviewUrl}
-                  onChange={setImageFile}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Destination</CardTitle>
-                <CardDescription>Choose where the finished MP4 goes.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs value={mode} onValueChange={setMode}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="download">
-                      <Download aria-hidden="true" />
-                      Download
-                    </TabsTrigger>
-                    <TabsTrigger value="youtube">
-                      <TvMinimalPlay aria-hidden="true" />
-                      YouTube
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="download">
-                    <div className="rounded-lg border border-border bg-muted/40 p-4">
-                      <div className="flex items-center gap-3">
-                        <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
-                        <p className="text-sm font-medium">
-                          Temporary files are deleted after the MP4 download starts.
-                        </p>
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="youtube">
-                    <div className="grid gap-4">
-                      <div className="rounded-lg border border-border bg-muted/40 p-4">
-                        {youtube.connected ? (
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <ChannelAvatar channel={youtube.channel} />
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold uppercase text-muted-foreground">
-                                  Selected channel
-                                </p>
-                                <p className="truncate text-sm font-semibold">
-                                  {youtube.channel?.title || 'YouTube channel selected'}
-                                </p>
-                                <p className="truncate text-sm text-muted-foreground">
-                                  {youtube.channel?.customUrl ||
-                                    youtube.channel?.id ||
-                                    'Ready for direct upload'}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Button type="button" variant="outline" onClick={changeYoutubeChannel}>
-                                <TvMinimalPlay aria-hidden="true" />
-                                Change channel
-                              </Button>
-                              <Button type="button" variant="ghost" onClick={disconnectYoutube}>
-                                <PlugZap aria-hidden="true" />
-                                Disconnect
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="text-sm font-semibold">Login with YouTube</p>
-                              <p className="text-sm text-muted-foreground">
-                                {youtube.configured
-                                  ? 'Google will ask which account or channel should receive uploads.'
-                                  : 'Google OAuth environment variables are missing.'}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              onClick={loginWithYoutube}
-                              disabled={!youtube.configured}
-                            >
-                              <TvMinimalPlay aria-hidden="true" />
-                              Login with YouTube
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-
-                      {youtube.connected && (
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <ChannelMetric
-                            label="Videos"
-                            value={formatCount(youtube.channel?.videoCount)}
-                          />
-                          <ChannelMetric
-                            label="Subscribers"
-                            value={formatCount(youtube.channel?.subscriberCount)}
-                          />
-                          <ChannelMetric
-                            label="Views"
-                            value={formatCount(youtube.channel?.viewCount)}
-                          />
-                        </div>
-                      )}
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="title">Title</Label>
-                          <Input
-                            id="title"
-                            value={title}
-                            onChange={(event) => setTitle(event.target.value)}
-                            maxLength={100}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="privacy">Privacy</Label>
-                          <select
-                            id="privacy"
-                            value={privacyStatus}
-                            onChange={(event) => setPrivacyStatus(event.target.value)}
-                            className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <option value="private">Private</option>
-                            <option value="unlisted">Unlisted</option>
-                            <option value="public">Public</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="description">Description</Label>
-                        <Textarea
-                          id="description"
-                          value={description}
-                          onChange={(event) => setDescription(event.target.value)}
-                          maxLength={5000}
-                        />
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          </div>
-
-          <aside className="space-y-5">
-            <Card>
-              <CardHeader>
-                <CardTitle>Realtime progress</CardTitle>
-                <CardDescription>{job.message}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ProgressRow
-                  icon={UploadCloud}
-                  label={
-                    job.stage === 'transferring'
-                      ? 'Sending MP4'
-                      : job.stage === 'receiving'
-                        ? 'Sending files'
-                        : 'Preparing files'
-                  }
-                  value={clientUploadProgress}
-                  active={['loading', 'preparing', 'receiving', 'transferring'].includes(job.stage)}
-                />
-                <ProgressRow
-                  icon={RefreshCcw}
-                  label="Converting"
-                  value={job.convertProgress || 0}
-                  active={job.stage === 'converting'}
-                  detail={job.etaText}
-                />
-                {mode === 'youtube' && (
-                  <ProgressRow
-                    icon={TvMinimalPlay}
-                    label="Uploading"
-                    value={job.uploadProgress || 0}
-                    active={job.stage === 'uploading'}
-                  />
-                )}
-
-                <div className="rounded-lg border border-border bg-muted/40 p-4">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-semibold">Overall</span>
-                    <span className="text-muted-foreground">{Math.round(job.progress || 0)}%</span>
-                  </div>
-                  <Progress value={job.progress || 0} />
-                </div>
-
-                {visibleError && (
+          <TabsContent value="studio" className="space-y-5">
+            <section className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+              <div className="space-y-5">
+                {health.checked && !health.ok && (
                   <div
                     role="alert"
-                    className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                    className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200"
                   >
-                    {visibleError}
+                    <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="font-semibold">Backend needs attention</p>
+                      <p className="mt-1 text-amber-700 dark:text-amber-200/80">{formatJobError(health.error)}</p>
+                    </div>
                   </div>
                 )}
 
-                {notice && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-                    {notice}
-                  </div>
-                )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Add Queue Item</CardTitle>
+                    <CardDescription>Each item can use its own mode and YouTube title.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FileDrop
+                        accept="audio/mpeg,audio/mp3"
+                        file={editorMp3File}
+                        icon={FileAudio}
+                        label="MP3 file"
+                        onChange={setEditorMp3File}
+                      />
+                      <FileDrop
+                        accept="image/png,image/jpeg,image/webp"
+                        file={editorImageFile}
+                        icon={Image}
+                        label="Cover image"
+                        previewUrl={editorImagePreviewUrl}
+                        onChange={setEditorImageFile}
+                      />
+                    </div>
 
-                {job.status === 'completed' && (downloadHref || job.downloadUrl) && (
-                  <Button asChild className="w-full" size="lg">
-                    <a
-                      href={downloadHref || `${API_URL}${job.downloadUrl}`}
-                      download={`${slugifyTitle(title)}.mp4`}
-                    >
-                      <Download aria-hidden="true" />
-                      Download MP4
-                    </a>
-                  </Button>
-                )}
+                    <Tabs value={editorMode} onValueChange={setQuickMode}>
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="download">
+                          <Download aria-hidden="true" />
+                          Download
+                        </TabsTrigger>
+                        <TabsTrigger value="youtube">
+                          <TvMinimalPlay aria-hidden="true" />
+                          YouTube
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
 
-                {job.status === 'completed' && job.youtubeUrl && (
-                  <Button asChild className="w-full" size="lg">
-                    <a href={job.youtubeUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink aria-hidden="true" />
-                      Open YouTube Video
-                    </a>
-                  </Button>
-                )}
+                    {editorMode === 'youtube' && (
+                      <div className="grid gap-4">
+                        <div className="rounded-lg border border-border bg-muted/40 p-4">
+                          {youtube.connected ? (
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <ChannelAvatar channel={youtube.channel} />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold uppercase text-muted-foreground">
+                                    Selected channel
+                                  </p>
+                                  <p className="truncate text-sm font-semibold">
+                                    {youtube.channel?.title || 'YouTube channel selected'}
+                                  </p>
+                                  <p className="truncate text-sm text-muted-foreground">
+                                    {youtube.channel?.customUrl || youtube.channel?.id || 'Ready for upload'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button type="button" variant="outline" onClick={changeYoutubeChannel}>
+                                  <TvMinimalPlay aria-hidden="true" />
+                                  Change channel
+                                </Button>
+                                <Button type="button" variant="ghost" onClick={disconnectYoutube}>
+                                  Disconnect
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold">Login with YouTube</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {youtube.configured
+                                    ? 'Google will ask which account or channel should receive uploads.'
+                                    : 'Google OAuth environment variables are missing.'}
+                                </p>
+                              </div>
+                              <Button type="button" onClick={loginWithYoutube} disabled={!youtube.configured}>
+                                <TvMinimalPlay aria-hidden="true" />
+                                Login with YouTube
+                              </Button>
+                            </div>
+                          )}
+                        </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <Button type="button" onClick={startJob} disabled={!canStart} size="lg">
-                    {isSubmitting || job.status === 'running' ? (
-                      <Loader2 className="animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Play aria-hidden="true" />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="item-title">Title</Label>
+                            <Input
+                              id="item-title"
+                              value={editorTitle}
+                              onChange={(event) => setEditorTitle(event.target.value)}
+                              maxLength={100}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="item-privacy">Privacy</Label>
+                            <select
+                              id="item-privacy"
+                              value={editorPrivacyStatus}
+                              onChange={(event) => setEditorPrivacyStatus(event.target.value)}
+                              className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <option value="private">Private</option>
+                              <option value="unlisted">Unlisted</option>
+                              <option value="public">Public</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="item-description">Description</Label>
+                          <Textarea
+                            id="item-description"
+                            value={editorDescription}
+                            onChange={(event) => setEditorDescription(event.target.value)}
+                            maxLength={5000}
+                          />
+                        </div>
+                      </div>
                     )}
-                    Start
-                  </Button>
-                  <Button type="button" variant="outline" onClick={resetWorkbench} size="lg">
-                    <RefreshCcw aria-hidden="true" />
-                    Reset
-                  </Button>
+
+                    {editorMode === 'download' && (
+                      <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <div className="flex items-center gap-3">
+                          <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
+                          <p className="text-sm font-medium">
+                            Browser conversion keeps this item local and gives you a direct MP4 download.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <Button type="button" onClick={addQueueItem} disabled={!canAddItem} className="w-full">
+                      <Plus aria-hidden="true" />
+                      Add Item to Queue
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Queue Order</CardTitle>
+                    <CardDescription>
+                      Drag-like controls: move up/down to set which item converts first.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {!queueItems.length && (
+                      <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                        Queue is empty. Add your first item above.
+                      </div>
+                    )}
+                    {queueItems.map((item, index) => (
+                      <QueueItemRow
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        isActive={item.id === activeItemId}
+                        canMoveUp={index > 0}
+                        canMoveDown={index < queueItems.length - 1}
+                        lockControls={isQueueRunning}
+                        onSelect={() => setActiveItemId(item.id)}
+                        onMoveUp={() => moveQueueItem(item.id, 'up')}
+                        onMoveDown={() => moveQueueItem(item.id, 'down')}
+                        onRemove={() => removeQueueItem(item.id)}
+                      />
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <aside className="space-y-5">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Realtime Progress</CardTitle>
+                    <CardDescription>{activeItem?.message || 'Idle'}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ProgressRow
+                      icon={UploadCloud}
+                      label="Sending MP4"
+                      value={activeItem?.transferProgress || 0}
+                      active={activeItem?.stage === 'transferring'}
+                    />
+                    <ProgressRow
+                      icon={FileAudio}
+                      label="Converting"
+                      value={activeItem?.convertProgress || 0}
+                      active={activeItem?.stage === 'converting'}
+                      detail={activeItem?.etaText}
+                    />
+                    <ProgressRow
+                      icon={TvMinimalPlay}
+                      label="Uploading"
+                      value={activeItem?.uploadProgress || 0}
+                      active={activeItem?.stage === 'uploading'}
+                    />
+
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="font-semibold">Overall</span>
+                        <span className="text-muted-foreground">{Math.round(activeItem?.progress || 0)}%</span>
+                      </div>
+                      <Progress value={activeItem?.progress || 0} />
+                    </div>
+
+                    {visibleError && (
+                      <div
+                        role="alert"
+                        className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                      >
+                        {visibleError}
+                      </div>
+                    )}
+
+                    {notice && (
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+                        {notice}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button type="button" onClick={startQueue} disabled={!canStartQueue} size="lg">
+                        {isQueueRunning ? (
+                          <Loader2 className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Play aria-hidden="true" />
+                        )}
+                        Start Queue
+                      </Button>
+                      <Button type="button" variant="outline" onClick={clearQueue} disabled={isQueueRunning} size="lg">
+                        <Trash2 aria-hidden="true" />
+                        Clear Queue
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Queue Results</CardTitle>
+                    <CardDescription>Completed items keep their own output links.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {queueItems.filter((item) => item.status === 'completed').length === 0 && (
+                      <p className="text-sm text-muted-foreground">No completed items yet.</p>
+                    )}
+                    {queueItems
+                      .filter((item) => item.status === 'completed')
+                      .map((item) => (
+                        <div key={`${item.id}-result`} className="rounded-lg border border-border p-3">
+                          <p className="truncate text-sm font-semibold">{item.title}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {item.mode === 'youtube' ? 'Uploaded to YouTube' : 'Ready to download'}
+                          </p>
+                          <div className="mt-3">
+                            {item.mode === 'youtube' && item.youtubeUrl ? (
+                              <Button asChild variant="outline" className="w-full">
+                                <a href={item.youtubeUrl} target="_blank" rel="noreferrer">
+                                  <ExternalLink aria-hidden="true" />
+                                  Open YouTube Video
+                                </a>
+                              </Button>
+                            ) : (
+                              item.downloadHref && (
+                                <Button asChild variant="outline" className="w-full">
+                                  <a href={item.downloadHref} download={`${slugifyTitle(item.title)}.mp4`}>
+                                    <Download aria-hidden="true" />
+                                    Download MP4
+                                  </a>
+                                </Button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </CardContent>
+                </Card>
+              </aside>
+            </section>
+          </TabsContent>
+
+          <TabsContent value="docs">
+            <Card>
+              <CardHeader>
+                <CardTitle>How to Use / วิธีใช้งาน</CardTitle>
+                <CardDescription>Quick flow for batch conversion and YouTube queue upload.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <DocStep
+                  number={1}
+                  title="Add Files Per Item"
+                  titleTh="เพิ่มไฟล์ในแต่ละรายการ"
+                  body="Choose one MP3 + one cover image, set destination mode, and click Add Item to Queue."
+                  bodyTh="เลือก MP3 1 ไฟล์ + รูปปก 1 รูป เลือกปลายทาง แล้วกด Add Item to Queue"
+                />
+                <DocStep
+                  number={2}
+                  title="Set Unique YouTube Metadata"
+                  titleTh="ตั้งค่าข้อมูล YouTube แยกรายการ"
+                  body="When mode is YouTube, set Title, Description, and Privacy for that specific queue item."
+                  bodyTh="ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description และ Privacy แยกสำหรับรายการนั้น"
+                />
+                <DocStep
+                  number={3}
+                  title="Arrange Processing Order"
+                  titleTh="จัดลำดับการประมวลผล"
+                  body="Use Up/Down controls in Queue Order. The top item runs first."
+                  bodyTh="ใช้ปุ่มขึ้น/ลงใน Queue Order โดยรายการบนสุดจะรันก่อน"
+                />
+                <DocStep
+                  number={4}
+                  title="Start Queue"
+                  titleTh="เริ่มคิว"
+                  body="Click Start Queue. The app converts item-by-item and keeps each result link."
+                  bodyTh="กด Start Queue ระบบจะประมวลผลทีละรายการและเก็บลิงก์ผลลัพธ์แต่ละรายการไว้"
+                />
+                <DocStep
+                  number={5}
+                  title="Review Outputs"
+                  titleTh="ตรวจผลลัพธ์"
+                  body="Download-mode items show MP4 buttons. YouTube-mode items show direct video links."
+                  bodyTh="รายการโหมด Download จะมีปุ่มดาวน์โหลด MP4 และโหมด YouTube จะมีลิงก์วิดีโอโดยตรง"
+                />
+
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="font-semibold">Notes / หมายเหตุ</p>
+                  <p className="mt-2 text-muted-foreground">
+                    Browser conversion can be heavy on memory. For best stability, keep one browser tab active while queue is running.
+                  </p>
+                  <p className="mt-2 text-muted-foreground">
+                    การแปลงบนเบราว์เซอร์ใช้หน่วยความจำค่อนข้างสูง เพื่อความเสถียรให้เปิดแท็บนี้ไว้ระหว่างรันคิว
+                  </p>
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
 
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-              <Metric label="Video" value="H.264" />
-              <Metric label="Audio" value="AAC 192k" />
-              <Metric label="Cleanup" value="Auto" />
-            </div>
-          </aside>
-        </section>
+          <TabsContent value="donate">
+            <Card>
+              <CardHeader>
+                <CardTitle>Donate</CardTitle>
+                <CardDescription>Support future improvements of MP3 to MP4 Studio.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="font-semibold">Why support matters</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Donations help pay for infrastructure, security updates, and continuous UX improvements.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                  <div className="rounded-lg border border-border bg-card p-4">
+                    <img
+                      src="https://promptpay.io/0956790178.png"
+                      alt="PromptPay QR 0956790178"
+                      className="mx-auto w-full max-w-[180px] rounded-md border border-border bg-white p-2"
+                    />
+                    <p className="mt-3 text-center text-xs text-muted-foreground">Scan to donate via PromptPay</p>
+                  </div>
+                  <DonateMethod
+                    title="PromptPay"
+                    value="0956790178"
+                    hint="Name: KindeeYudee"
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <DonateMethod
+                    title="PayPal"
+                    value="https://paypal.me/yourname"
+                    hint="Optional additional channel."
+                  />
+                  <DonateMethod
+                    title="Buy Me a Coffee"
+                    value="https://buymeacoffee.com/yourname"
+                    hint="Optional creator page."
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </main>
   );
@@ -753,7 +964,11 @@ function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
         'group flex min-h-48 cursor-pointer flex-col justify-between rounded-lg border border-dashed border-border bg-muted/35 p-4 text-left transition-colors duration-200 hover:border-primary/70 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         previewUrl && 'bg-cover bg-center',
       )}
-      style={previewUrl ? { backgroundImage: `linear-gradient(rgba(2, 6, 23, .2), rgba(2, 6, 23, .45)), url(${previewUrl})` } : undefined}
+      style={
+        previewUrl
+          ? { backgroundImage: `linear-gradient(rgba(2, 6, 23, .2), rgba(2, 6, 23, .45)), url(${previewUrl})` }
+          : undefined
+      }
     >
       <input
         ref={inputRef}
@@ -778,6 +993,90 @@ function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
   );
 }
 
+function QueueItemRow({
+  item,
+  index,
+  isActive,
+  canMoveUp,
+  canMoveDown,
+  lockControls,
+  onSelect,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onSelect();
+      }}
+      className={cn(
+        'w-full rounded-lg border p-3 text-left transition-colors',
+        isActive ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted/40',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {index + 1}. {item.title}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {item.mp3File?.name || 'MP3'} / {item.imageFile?.name || 'Image'}
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {item.mode === 'youtube' ? 'YouTube upload' : 'Device download'} / {item.message}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              onMoveUp();
+            }}
+            disabled={!canMoveUp || lockControls}
+          >
+            <ArrowUp aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              onMoveDown();
+            }}
+            disabled={!canMoveDown || lockControls}
+          >
+            <ArrowDown aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove();
+            }}
+            disabled={lockControls}
+          >
+            <Trash2 aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3">
+        <Progress value={item.progress || 0} />
+      </div>
+      {item.error && <p className="mt-2 text-xs text-destructive">{item.error}</p>}
+    </div>
+  );
+}
+
 function ProgressRow({ icon: Icon, label, value, active, detail }) {
   return (
     <div className="rounded-lg border border-border p-4">
@@ -791,19 +1090,8 @@ function ProgressRow({ icon: Icon, label, value, active, detail }) {
         </div>
         <span className="shrink-0 text-sm text-muted-foreground">{Math.round(value)}%</span>
       </div>
-      {detail && (
-        <p className="mb-3 text-xs font-medium text-muted-foreground">{detail}</p>
-      )}
+      {detail && <p className="mb-3 text-xs font-medium text-muted-foreground">{detail}</p>}
       <Progress value={value} />
-    </div>
-  );
-}
-
-function Metric({ label, value }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-bold">{value}</p>
     </div>
   );
 }
@@ -826,19 +1114,41 @@ function ChannelAvatar({ channel }) {
   );
 }
 
-function ChannelMetric({ label, value }) {
+function DonateMethod({ title, value, hint }) {
   return (
-    <div className="rounded-lg border border-border bg-background/70 p-3">
-      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm font-bold">{value}</p>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">{title}</p>
+      <p className="mt-2 break-all text-sm font-semibold">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }
 
-function getActiveStatus(job) {
-  if (job.status === 'completed') return { label: 'Complete', variant: 'success' };
-  if (job.status === 'error') return { label: 'Needs attention', variant: 'warning' };
-  if (['queued', 'running', 'uploading'].includes(job.status)) return { label: 'Working', variant: 'default' };
+function DocStep({ number, title, titleTh, body, bodyTh }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">Step {number}</p>
+      <p className="mt-1 font-semibold">{title}</p>
+      <p className="mt-1 text-muted-foreground">{body}</p>
+      {titleTh ? <p className="mt-2 font-semibold">{titleTh}</p> : null}
+      {bodyTh ? <p className="mt-1 text-muted-foreground">{bodyTh}</p> : null}
+    </div>
+  );
+}
+
+function cleanupQueueUrls(items) {
+  for (const item of items) {
+    if (item.downloadHref) URL.revokeObjectURL(item.downloadHref);
+    if (item.imagePreviewUrl) URL.revokeObjectURL(item.imagePreviewUrl);
+  }
+}
+
+function getActiveStatus(isQueueRunning, queueItems) {
+  if (isQueueRunning) return { label: 'Working', variant: 'default' };
+  if (queueItems.some((item) => item.status === 'error')) return { label: 'Needs attention', variant: 'warning' };
+  if (queueItems.length && queueItems.every((item) => item.status === 'completed')) {
+    return { label: 'Complete', variant: 'success' };
+  }
   return { label: 'Ready', variant: 'secondary' };
 }
 
@@ -859,27 +1169,18 @@ function slugifyTitle(value) {
   );
 }
 
-function formatCount(value) {
-  if (value === null || value === undefined || value === '') return 'Hidden';
-  const number = Number(value);
-  if (!Number.isFinite(number)) return String(value);
-  return new Intl.NumberFormat('en', { notation: 'compact' }).format(number);
-}
-
 function formatJobError(message) {
   if (!message) return '';
   if (message.includes('ENOENT') || message.includes('not recognized')) {
-    return 'FFmpeg/FFprobe is not available. Leave FFMPEG_PATH empty to use the bundled binaries, or install FFmpeg and set the path manually.';
+    return 'FFmpeg/FFprobe is not available. Leave FFMPEG_PATH empty to use bundled binaries, or install FFmpeg and set path manually.';
   }
   if (message.includes('Could not read MP3 duration')) {
-    return 'Could not read the MP3 duration. Try another MP3 file or re-export the audio.';
+    return 'Could not read MP3 duration. Try another MP3 file or re-export audio.';
   }
   if (message.includes('Browser FFmpeg')) {
-    return 'Browser conversion failed. Try a smaller MP3/image, or use a desktop browser with more memory.';
+    return 'Browser conversion failed. Try a smaller MP3/image or a browser with more memory.';
   }
-  if (message.length > 260) {
-    return `${message.slice(0, 260)}...`;
-  }
+  if (message.length > 260) return `${message.slice(0, 260)}...`;
   return message;
 }
 
@@ -890,38 +1191,46 @@ function getErrorMessage(error, fallback) {
   return fallback;
 }
 
-function getConversionEtaText(percent, startedAtRef) {
-  if (percent < 15 || percent >= 100) return '';
-
-  const now = Date.now();
-  if (!startedAtRef.current) {
-    startedAtRef.current = now;
-    return '';
-  }
-
-  const elapsedSeconds = (now - startedAtRef.current) / 1000;
-  const completedAfterPreparation = percent - 12;
-  if (elapsedSeconds < 8 || completedAfterPreparation <= 2) return '';
-
-  const remainingSeconds = (elapsedSeconds / completedAfterPreparation) * (100 - percent);
+function getConversionEtaText(percent, startedAt) {
+  if (percent < 15 || percent >= 100 || !startedAt) return '';
+  const elapsedSeconds = (Date.now() - startedAt) / 1000;
+  if (elapsedSeconds < 8 || percent <= 2) return '';
+  const remainingSeconds = (elapsedSeconds / percent) * (100 - percent);
   if (!Number.isFinite(remainingSeconds) || remainingSeconds <= 0) return '';
-
   return `about ${formatDuration(remainingSeconds)} remaining`;
 }
 
 function formatDuration(seconds) {
   const roundedSeconds = Math.max(1, Math.round(seconds));
   if (roundedSeconds < 60) return `${roundedSeconds}s`;
-
   const minutes = Math.floor(roundedSeconds / 60);
   const restSeconds = roundedSeconds % 60;
-  if (minutes < 60) {
-    return restSeconds ? `${minutes}m ${restSeconds}s` : `${minutes}m`;
-  }
-
+  if (minutes < 60) return restSeconds ? `${minutes}m ${restSeconds}s` : `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
   return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
+async function postJson(pathname, body) {
+  const response = await fetch(`${API_URL}${pathname}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error || 'Request failed.');
+  }
+  return data;
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
 }
 
 export default App;
