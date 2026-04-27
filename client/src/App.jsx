@@ -32,8 +32,6 @@ import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
-const CLIENT_CONVERSION_SOFT_LIMIT_BYTES = 64 * 1024 * 1024;
-const SERVER_FALLBACK_UPLOAD_LIMIT_BYTES = 95 * 1024 * 1024;
 
 const initialJob = {
   status: 'idle',
@@ -180,22 +178,7 @@ function App() {
       return;
     }
 
-    const sourceBytes = getTotalSourceBytes(mp3File, imageFile);
-    if (mode === 'youtube' && !canUseServerFallback(mp3File, imageFile)) {
-      setError(getServerUploadLimitMessage(sourceBytes));
-      return;
-    }
-
     eventSourceRef.current?.close();
-    if (shouldUseBackendFirst(mp3File, imageFile) && canUseServerFallback(mp3File, imageFile) && health.ok && health.ffmpeg) {
-      const sourceSize = formatBytes(sourceBytes);
-      startServerFallbackJob(
-        `Large source files (${sourceSize}) can exceed browser memory.`,
-        `Large source files (${sourceSize}) can exceed browser memory, so backend conversion started automatically.`,
-      );
-      return;
-    }
-
     setIsSubmitting(true);
     setClientUploadProgress(0);
     setJob({
@@ -272,17 +255,8 @@ function App() {
       subscribeToJob(jobId);
     } catch (conversionError) {
       const message = getErrorMessage(conversionError, 'Browser conversion failed.');
-      if (health.ok && health.ffmpeg && canUseServerFallback(mp3File, imageFile)) {
-        startServerFallbackJob(message);
-        return;
-      }
-
       setIsSubmitting(false);
-      setError(
-        canUseServerFallback(mp3File, imageFile)
-          ? message
-          : `${message} ${getServerUploadLimitMessage(getTotalSourceBytes(mp3File, imageFile))}`,
-      );
+      setError(message);
       setJob({
         ...initialJob,
         status: 'error',
@@ -291,106 +265,6 @@ function App() {
         error: message,
       });
     }
-  }
-
-  function startServerFallbackJob(reason, noticeMessage) {
-    if (!canUseServerFallback(mp3File, imageFile)) {
-      const message = getServerUploadLimitMessage(getTotalSourceBytes(mp3File, imageFile));
-      setIsSubmitting(false);
-      setError(message);
-      setJob({
-        ...initialJob,
-        status: 'error',
-        stage: 'error',
-        message: 'Backend conversion is unavailable for this file size.',
-        error: message,
-      });
-      return;
-    }
-
-    setError('');
-    setNotice(
-      noticeMessage ||
-      (reason
-        ? `Browser conversion failed, so backend conversion started automatically. ${formatJobError(reason)}`
-        : 'Browser conversion failed, so backend conversion started automatically.'),
-    );
-    setIsSubmitting(true);
-    setClientUploadProgress(0);
-    setJob({
-      ...initialJob,
-      status: 'running',
-      stage: 'receiving',
-      message: 'Sending source files to the backend converter.',
-    });
-
-    const form = new FormData();
-    form.append('mp3', mp3File);
-    form.append('image', imageFile);
-    form.append('mode', mode);
-    form.append('title', title);
-    form.append('description', description);
-    form.append('privacyStatus', privacyStatus);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_URL}/api/jobs`);
-    xhr.withCredentials = true;
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const percent = Math.round((event.loaded / event.total) * 100);
-      setClientUploadProgress(percent);
-      setJob((current) => ({
-        ...current,
-        stage: 'receiving',
-        progress: Math.min(10, Math.round(percent * 0.1)),
-        message: `Sending source files ${percent}%`,
-      }));
-    };
-
-    xhr.onload = () => {
-      let data;
-      try {
-        data = JSON.parse(xhr.responseText);
-      } catch {
-        data = {};
-      }
-
-      if (xhr.status >= 400 || !data.jobId) {
-        const fallbackError = xhr.status === 413
-          ? getServerUploadLimitMessage(getTotalSourceBytes(mp3File, imageFile))
-          : data.error || 'Could not start backend conversion.';
-        setIsSubmitting(false);
-        setError(fallbackError);
-        setJob({
-          ...initialJob,
-          status: 'error',
-          stage: 'error',
-          message: 'Backend conversion failed.',
-          error: fallbackError,
-        });
-        return;
-      }
-
-      setClientUploadProgress(100);
-      setIsSubmitting(false);
-      subscribeToJob(data.jobId);
-    };
-
-    xhr.onerror = () => {
-      const fallbackError = 'Network error while sending files to the backend converter.';
-      setIsSubmitting(false);
-      setError(fallbackError);
-      setJob({
-        ...initialJob,
-        status: 'error',
-        stage: 'error',
-        message: 'Backend conversion failed.',
-        error: fallbackError,
-      });
-    };
-
-    xhr.send(form);
   }
 
   function sendClientMp4ToYoutube(mp4Blob) {
@@ -957,22 +831,6 @@ function getErrorMessage(error, fallback) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string') return error;
   return fallback;
-}
-
-function shouldUseBackendFirst(audioFile, imageFile) {
-  return getTotalSourceBytes(audioFile, imageFile) > CLIENT_CONVERSION_SOFT_LIMIT_BYTES;
-}
-
-function canUseServerFallback(audioFile, imageFile) {
-  return getTotalSourceBytes(audioFile, imageFile) <= SERVER_FALLBACK_UPLOAD_LIMIT_BYTES;
-}
-
-function getTotalSourceBytes(audioFile, imageFile) {
-  return (audioFile?.size || 0) + (imageFile?.size || 0);
-}
-
-function getServerUploadLimitMessage(sourceBytes) {
-  return `This file set is ${formatBytes(sourceBytes)}, which is above the safe production upload limit (${formatBytes(SERVER_FALLBACK_UPLOAD_LIMIT_BYTES)}). Backend fallback cannot receive it through the production proxy, so use a smaller MP3/image or convert locally in the browser.`;
 }
 
 export default App;
