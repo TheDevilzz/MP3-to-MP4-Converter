@@ -58,6 +58,146 @@ const YOUTUBE_CATEGORIES = [
   { id: '28', label: 'Science & Technology' },
 ];
 
+const UI_TEXT = {
+  th: {
+    appSubtitle: 'จัดคิว แปลงไฟล์ และเผยแพร่ตามลำดับ',
+    tabStudio: 'สตูดิโอ',
+    tabDocs: 'คู่มือ',
+    tabDonate: 'สนับสนุน',
+    backendNeedsAttention: 'Backend ต้องตรวจสอบ',
+    addQueueTitle: 'เพิ่มรายการเข้าคิว',
+    addQueueDesc: 'แปลงหลายรายการพร้อมกัน และอัปโหลด YouTube ทีละรายการตามคิว',
+    sharedCoverTitle: 'รูปปกร่วม (ไม่บังคับ)',
+    sharedCoverDesc: 'ใช้รูปเดียวกับทุกคิว หรือเว้นว่างเพื่อใช้พื้นหลังเรียบ',
+    sharedCoverApply: 'ใช้รูปปกร่วมเมื่อรายการนั้นไม่ได้เลือกรูปปกเฉพาะ',
+    mp3File: 'ไฟล์ MP3',
+    coverOptional: 'รูปปก (ไม่บังคับ)',
+    download: 'ดาวน์โหลด',
+    selectedChannel: 'ช่องที่เลือก',
+    channelSelected: 'เลือกช่อง YouTube แล้ว',
+    readyForUpload: 'พร้อมอัปโหลด',
+    changeChannel: 'เปลี่ยนช่อง',
+    disconnect: 'ยกเลิกการเชื่อมต่อ',
+    loginWithYoutube: 'เข้าสู่ระบบด้วย YouTube',
+    loginDesc: 'Google จะให้เลือกบัญชี/ช่องที่ต้องการอัปโหลด',
+    oauthMissing: 'ยังไม่ได้ตั้งค่า Google OAuth environment variables',
+    title: 'ชื่อคลิป',
+    privacy: 'การมองเห็น',
+    category: 'หมวดหมู่',
+    playlist: 'เพลย์ลิสต์',
+    noPlaylist: 'ไม่ใส่เพลย์ลิสต์ (อัปโหลดอย่างเดียว)',
+    playlistFoundSuffix: 'เพลย์ลิสต์ในช่องนี้',
+    connectYoutubeForPlaylist: 'เชื่อม YouTube ก่อนเพื่อโหลดเพลย์ลิสต์',
+    schedulePublish: 'ตั้งเวลาเผยแพร่บน YouTube',
+    publishAt: 'เผยแพร่เมื่อ',
+    scheduleHint: 'วิดีโอที่ตั้งเวลาจะถูกอัปเป็น Private ก่อน และเปิดตามเวลาที่เลือก',
+    description: 'คำอธิบาย',
+    downloadModeHint: 'แปลงในเบราว์เซอร์และดาวน์โหลด MP4 ได้ทันที ไฟล์ไม่ถูกเก็บถาวรบนเซิร์ฟเวอร์',
+    addItem: 'เพิ่มรายการเข้าคิว',
+    queueOrderTitle: 'ลำดับคิว',
+    queueOrderDesc: 'ใช้ปุ่มขึ้น/ลงเพื่อกำหนดว่าไฟล์ไหนแปลงก่อน',
+    queueEmpty: 'คิวยังว่าง เริ่มจากเพิ่มรายการแรกด้านบน',
+    realtimeTitle: 'ความคืบหน้าแบบเรียลไทม์',
+    idle: 'ยังไม่เริ่ม',
+    sendingMp4: 'ส่งไฟล์ MP4',
+    converting: 'กำลังแปลง',
+    uploading: 'กำลังอัปโหลด',
+    overall: 'รวมทั้งหมด',
+    startQueue: 'เริ่มคิว',
+    clearQueue: 'ล้างคิว',
+    queueResultsTitle: 'ผลลัพธ์คิว',
+    queueResultsDesc: 'แต่ละรายการที่เสร็จแล้วจะมีลิงก์ผลลัพธ์ของตัวเอง',
+    noCompleted: 'ยังไม่มีรายการที่เสร็จ',
+    uploadedToYoutube: 'อัปโหลดไป YouTube แล้ว',
+    readyToDownload: 'พร้อมดาวน์โหลด',
+    openYoutubeVideo: 'เปิดวิดีโอบน YouTube',
+    downloadMp4: 'ดาวน์โหลด MP4',
+    docsTitle: 'วิธีใช้งาน',
+    docsDesc: 'ขั้นตอนย่อสำหรับแปลงไฟล์และอัปโหลด YouTube แบบคิว',
+    notes: 'หมายเหตุ',
+    notesEn: 'Browser conversion can be memory-intensive. Keep this tab open while queue is running.',
+    notesTh: 'การแปลงบนเบราว์เซอร์ใช้หน่วยความจำค่อนข้างสูง ควรเปิดแท็บนี้ค้างไว้ระหว่างประมวลผล',
+    donateTitle: 'สนับสนุนโปรเจกต์',
+    donateDesc: 'ช่วยสนับสนุนค่าเซิร์ฟเวอร์และการพัฒนาฟีเจอร์ใหม่',
+    supportWhy: 'ทำไมการสนับสนุนจึงสำคัญ',
+    supportBody:
+      'ทุกการสนับสนุนช่วยค่าโครงสร้างพื้นฐาน ความปลอดภัย และการปรับปรุง UX อย่างต่อเนื่อง',
+    scanPromptPay: 'สแกนเพื่อโดเนตผ่าน PromptPay',
+    accountName: 'ชื่อบัญชี: วีระพล ขอร้อง',
+    optionalChannel: 'ช่องทางเสริมเพิ่มเติม',
+    thaiTipChannel: 'ช่องทางทิปสำหรับผู้ใช้ในไทย',
+    fileDropHint: 'คลิกหรือวางไฟล์ที่นี่',
+  },
+  en: {
+    appSubtitle: 'Queue, convert, and publish in order.',
+    tabStudio: 'Studio',
+    tabDocs: 'Docs',
+    tabDonate: 'Donate',
+    backendNeedsAttention: 'Backend needs attention',
+    addQueueTitle: 'Add Queue Item',
+    addQueueDesc: 'Convert all items in parallel. YouTube uploads run one-by-one in queue order.',
+    sharedCoverTitle: 'Shared cover (optional)',
+    sharedCoverDesc: 'Use one cover for every queue item, or leave empty to generate a plain background.',
+    sharedCoverApply: 'Apply shared cover when item-specific cover is not selected.',
+    mp3File: 'MP3 file',
+    coverOptional: 'Cover image (optional)',
+    download: 'Download',
+    selectedChannel: 'Selected channel',
+    channelSelected: 'YouTube channel selected',
+    readyForUpload: 'Ready for upload',
+    changeChannel: 'Change channel',
+    disconnect: 'Disconnect',
+    loginWithYoutube: 'Login with YouTube',
+    loginDesc: 'Google will ask which account or channel should receive uploads.',
+    oauthMissing: 'Google OAuth environment variables are missing.',
+    title: 'Title',
+    privacy: 'Privacy',
+    category: 'Category',
+    playlist: 'Playlist',
+    noPlaylist: 'No playlist (upload only)',
+    playlistFoundSuffix: 'playlist(s) found on this channel.',
+    connectYoutubeForPlaylist: 'Connect YouTube to load playlists.',
+    schedulePublish: 'Schedule publish on YouTube',
+    publishAt: 'Publish at',
+    scheduleHint: 'Scheduled uploads are sent as private and become public at your chosen time.',
+    description: 'Description',
+    downloadModeHint: 'Browser conversion keeps this item local and gives you a direct MP4 download.',
+    addItem: 'Add Item to Queue',
+    queueOrderTitle: 'Queue Order',
+    queueOrderDesc: 'Drag-like controls: move up/down to set which item converts first.',
+    queueEmpty: 'Queue is empty. Add your first item above.',
+    realtimeTitle: 'Realtime Progress',
+    idle: 'Idle',
+    sendingMp4: 'Sending MP4',
+    converting: 'Converting',
+    uploading: 'Uploading',
+    overall: 'Overall',
+    startQueue: 'Start Queue',
+    clearQueue: 'Clear Queue',
+    queueResultsTitle: 'Queue Results',
+    queueResultsDesc: 'Completed items keep their own output links.',
+    noCompleted: 'No completed items yet.',
+    uploadedToYoutube: 'Uploaded to YouTube',
+    readyToDownload: 'Ready to download',
+    openYoutubeVideo: 'Open YouTube Video',
+    downloadMp4: 'Download MP4',
+    docsTitle: 'How to Use',
+    docsDesc: 'Quick flow for batch conversion and YouTube queue upload.',
+    notes: 'Notes',
+    notesEn: 'Browser conversion can be memory-intensive. Keep this tab open while queue is running.',
+    notesTh: 'การแปลงบนเบราว์เซอร์ใช้หน่วยความจำค่อนข้างสูง ควรเปิดแท็บนี้ค้างไว้ระหว่างประมวลผล',
+    donateTitle: 'Donate',
+    donateDesc: 'Support future improvements of MP3 to MP4 Studio.',
+    supportWhy: 'Why support matters',
+    supportBody: 'Donations help pay for infrastructure, security updates, and continuous UX improvements.',
+    scanPromptPay: 'Scan to donate via PromptPay',
+    accountName: 'Account name: วีระพล ขอร้อง',
+    optionalChannel: 'Optional additional channel.',
+    thaiTipChannel: 'Thai tipping channel.',
+    fileDropHint: 'Click or drag file here',
+  },
+};
+
 function App() {
   const eventSourceRef = useRef(null);
   const queueRef = useRef([]);
@@ -92,7 +232,7 @@ function App() {
   });
   const [youtubePlaylists, setYoutubePlaylists] = useState([]);
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
-  const [promptPayQrDataUrl, setPromptPayQrDataUrl] = useState('0956790178');
+  const [promptPayQrDataUrl, setPromptPayQrDataUrl] = useState('');
   const [notice, setNotice] = useState(() =>
     initialQuery.get('youtube') === 'connected' ? 'YouTube connected.' : '',
   );
@@ -103,6 +243,7 @@ function App() {
   );
 
   const activeItem = queueItems.find((item) => item.id === activeItemId) || null;
+  const t = UI_TEXT[locale] || UI_TEXT.en;
   const activeStatus = getActiveStatus(isQueueRunning, queueItems);
   const editorImagePreviewUrl = useMemo(() => {
     if (!editorImageFile) return null;
@@ -675,7 +816,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-xl font-extrabold tracking-normal sm:text-2xl">MP3 to MP4 Studio</h1>
-              <p className="text-sm text-muted-foreground">Queue, convert, and publish in order.</p>
+              <p className="text-sm text-muted-foreground">{t.appSubtitle}</p>
             </div>
           </div>
 
@@ -711,7 +852,7 @@ function App() {
           <TabsList className="grid w-full grid-cols-4 sm:w-[560px]">
             <TabsTrigger value="studio">
               <FileAudio aria-hidden="true" />
-              Studio
+              {t.tabStudio}
             </TabsTrigger>
             <TabsTrigger value="t2s">
               <FileText aria-hidden="true" />
@@ -719,11 +860,11 @@ function App() {
             </TabsTrigger>
             <TabsTrigger value="docs">
               <BookOpenText aria-hidden="true" />
-              Docs
+              {t.tabDocs}
             </TabsTrigger>
             <TabsTrigger value="donate">
               <HeartHandshake aria-hidden="true" />
-              Donate
+              {t.tabDonate}
             </TabsTrigger>
           </TabsList>
 
@@ -737,7 +878,7 @@ function App() {
                   >
                     <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     <div>
-                      <p className="font-semibold">Backend needs attention</p>
+                      <p className="font-semibold">{t.backendNeedsAttention}</p>
                       <p className="mt-1 text-amber-700 dark:text-amber-200/80">{formatJobError(health.error)}</p>
                     </div>
                   </div>
@@ -745,23 +886,20 @@ function App() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Add Queue Item</CardTitle>
-                    <CardDescription>
-                      Convert all items in parallel. YouTube uploads run one-by-one in queue order.
-                    </CardDescription>
+                    <CardTitle>{t.addQueueTitle}</CardTitle>
+                    <CardDescription>{t.addQueueDesc}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="rounded-lg border border-border bg-muted/40 p-4">
-                      <p className="text-sm font-semibold">Shared cover (optional)</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Use one cover for every queue item, or leave empty to generate a plain background.
-                      </p>
+                      <p className="text-sm font-semibold">{t.sharedCoverTitle}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{t.sharedCoverDesc}</p>
                       <div className="mt-3 grid gap-4 md:grid-cols-2">
                         <FileDrop
                           accept="image/png,image/jpeg,image/webp"
                           file={sharedCoverFile}
                           icon={Image}
-                          label="Shared cover"
+                          label={t.sharedCoverTitle}
+                          hint={t.fileDropHint}
                           previewUrl={sharedCoverPreviewUrl}
                           onChange={setSharedCoverFile}
                         />
@@ -773,7 +911,7 @@ function App() {
                             onChange={(event) => setUseSharedCover(event.target.checked)}
                           />
                           <span className="text-sm text-muted-foreground">
-                            Apply shared cover when item-specific cover is not selected.
+                            {t.sharedCoverApply}
                           </span>
                         </label>
                       </div>
@@ -784,14 +922,16 @@ function App() {
                         accept="audio/mpeg,audio/mp3"
                         file={editorMp3File}
                         icon={FileAudio}
-                        label="MP3 file"
+                        label={t.mp3File}
+                        hint={t.fileDropHint}
                         onChange={setEditorMp3File}
                       />
                       <FileDrop
                         accept="image/png,image/jpeg,image/webp"
                         file={editorImageFile}
                         icon={Image}
-                        label="Cover image (optional)"
+                        label={t.coverOptional}
+                        hint={t.fileDropHint}
                         previewUrl={editorImagePreviewUrl}
                         onChange={setEditorImageFile}
                       />
@@ -801,7 +941,7 @@ function App() {
                       <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="download">
                           <Download aria-hidden="true" />
-                          Download
+                          {t.download}
                         </TabsTrigger>
                         <TabsTrigger value="youtube">
                           <TvMinimalPlay aria-hidden="true" />
@@ -819,39 +959,39 @@ function App() {
                                 <ChannelAvatar channel={youtube.channel} />
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold uppercase text-muted-foreground">
-                                    Selected channel
+                                    {t.selectedChannel}
                                   </p>
                                   <p className="truncate text-sm font-semibold">
-                                    {youtube.channel?.title || 'YouTube channel selected'}
+                                    {youtube.channel?.title || t.channelSelected}
                                   </p>
                                   <p className="truncate text-sm text-muted-foreground">
-                                    {youtube.channel?.customUrl || youtube.channel?.id || 'Ready for upload'}
+                                    {youtube.channel?.customUrl || youtube.channel?.id || t.readyForUpload}
                                   </p>
                                 </div>
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 <Button type="button" variant="outline" onClick={changeYoutubeChannel}>
                                   <TvMinimalPlay aria-hidden="true" />
-                                  Change channel
+                                  {t.changeChannel}
                                 </Button>
                                 <Button type="button" variant="ghost" onClick={disconnectYoutube}>
-                                  Disconnect
+                                  {t.disconnect}
                                 </Button>
                               </div>
                             </div>
                           ) : (
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
-                                <p className="text-sm font-semibold">Login with YouTube</p>
+                                <p className="text-sm font-semibold">{t.loginWithYoutube}</p>
                                 <p className="text-sm text-muted-foreground">
                                   {youtube.configured
-                                    ? 'Google will ask which account or channel should receive uploads.'
-                                    : 'Google OAuth environment variables are missing.'}
+                                    ? t.loginDesc
+                                    : t.oauthMissing}
                                 </p>
                               </div>
                               <Button type="button" onClick={loginWithYoutube} disabled={!youtube.configured}>
                                 <TvMinimalPlay aria-hidden="true" />
-                                Login with YouTube
+                                {t.loginWithYoutube}
                               </Button>
                             </div>
                           )}
@@ -859,7 +999,7 @@ function App() {
 
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <div className="space-y-2">
-                            <Label htmlFor="item-title">Title</Label>
+                            <Label htmlFor="item-title">{t.title}</Label>
                             <Input
                               id="item-title"
                               value={editorTitle}
@@ -868,7 +1008,7 @@ function App() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="item-privacy">Privacy</Label>
+                            <Label htmlFor="item-privacy">{t.privacy}</Label>
                             <select
                               id="item-privacy"
                               value={editorPrivacyStatus}
@@ -881,7 +1021,7 @@ function App() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="item-category">Category</Label>
+                            <Label htmlFor="item-category">{t.category}</Label>
                             <select
                               id="item-category"
                               value={editorCategoryId}
@@ -896,7 +1036,7 @@ function App() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="item-playlist">Playlist</Label>
+                            <Label htmlFor="item-playlist">{t.playlist}</Label>
                             <select
                               id="item-playlist"
                               value={editorPlaylistId}
@@ -904,7 +1044,7 @@ function App() {
                               disabled={!youtube.connected}
                               className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <option value="">No playlist (upload only)</option>
+                              <option value="">{t.noPlaylist}</option>
                               {youtubePlaylists.map((playlist) => (
                                 <option key={playlist.id} value={playlist.id}>
                                   {playlist.title}
@@ -913,8 +1053,8 @@ function App() {
                             </select>
                             <p className="text-xs text-muted-foreground">
                               {youtube.connected
-                                ? `${youtubePlaylists.length} playlist(s) found on this channel.`
-                                : 'Connect YouTube to load playlists.'}
+                                ? `${youtubePlaylists.length} ${t.playlistFoundSuffix}`
+                                : t.connectYoutubeForPlaylist}
                             </p>
                           </div>
                         </div>
@@ -928,12 +1068,12 @@ function App() {
                               onChange={(event) => setEditorScheduleEnabled(event.target.checked)}
                             />
                             <span className="text-sm text-muted-foreground">
-                              Schedule publish on YouTube
+                              {t.schedulePublish}
                             </span>
                           </label>
                           {editorScheduleEnabled && (
                             <div className="mt-3 space-y-2">
-                              <Label htmlFor="item-scheduled-at">Publish at</Label>
+                              <Label htmlFor="item-scheduled-at">{t.publishAt}</Label>
                               <Input
                                 id="item-scheduled-at"
                                 type="datetime-local"
@@ -941,14 +1081,14 @@ function App() {
                                 onChange={(event) => setEditorScheduledAt(event.target.value)}
                               />
                               <p className="text-xs text-muted-foreground">
-                                Scheduled uploads are sent as private and become public at your chosen time.
+                                {t.scheduleHint}
                               </p>
                             </div>
                           )}
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="item-description">Description</Label>
+                          <Label htmlFor="item-description">{t.description}</Label>
                           <Textarea
                             id="item-description"
                             value={editorDescription}
@@ -964,7 +1104,7 @@ function App() {
                         <div className="flex items-center gap-3">
                           <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
                           <p className="text-sm font-medium">
-                            Browser conversion keeps this item local and gives you a direct MP4 download.
+                            {t.downloadModeHint}
                           </p>
                         </div>
                       </div>
@@ -972,22 +1112,20 @@ function App() {
 
                     <Button type="button" onClick={addQueueItem} disabled={!canAddItem} className="w-full">
                       <Plus aria-hidden="true" />
-                      Add Item to Queue
+                      {t.addItem}
                     </Button>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Queue Order</CardTitle>
-                    <CardDescription>
-                      Drag-like controls: move up/down to set which item converts first.
-                    </CardDescription>
+                    <CardTitle>{t.queueOrderTitle}</CardTitle>
+                    <CardDescription>{t.queueOrderDesc}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {!queueItems.length && (
                       <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                        Queue is empty. Add your first item above.
+                        {t.queueEmpty}
                       </div>
                     )}
                     {queueItems.map((item, index) => (
@@ -1012,33 +1150,33 @@ function App() {
               <aside className="space-y-5">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Realtime Progress</CardTitle>
-                    <CardDescription>{activeItem?.message || 'Idle'}</CardDescription>
+                    <CardTitle>{t.realtimeTitle}</CardTitle>
+                    <CardDescription>{activeItem?.message || t.idle}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <ProgressRow
                       icon={UploadCloud}
-                      label="Sending MP4"
+                      label={t.sendingMp4}
                       value={activeItem?.transferProgress || 0}
                       active={activeItem?.stage === 'transferring'}
                     />
                     <ProgressRow
                       icon={FileAudio}
-                      label="Converting"
+                      label={t.converting}
                       value={activeItem?.convertProgress || 0}
                       active={activeItem?.stage === 'converting'}
                       detail={activeItem?.etaText}
                     />
                     <ProgressRow
                       icon={TvMinimalPlay}
-                      label="Uploading"
+                      label={t.uploading}
                       value={activeItem?.uploadProgress || 0}
                       active={activeItem?.stage === 'uploading'}
                     />
 
                     <div className="rounded-lg border border-border bg-muted/40 p-4">
                       <div className="mb-2 flex items-center justify-between text-sm">
-                        <span className="font-semibold">Overall</span>
+                        <span className="font-semibold">{t.overall}</span>
                         <span className="text-muted-foreground">{Math.round(activeItem?.progress || 0)}%</span>
                       </div>
                       <Progress value={activeItem?.progress || 0} />
@@ -1066,11 +1204,11 @@ function App() {
                         ) : (
                           <Play aria-hidden="true" />
                         )}
-                        Start Queue
+                        {t.startQueue}
                       </Button>
                       <Button type="button" variant="outline" onClick={clearQueue} disabled={isQueueRunning} size="lg">
                         <Trash2 aria-hidden="true" />
-                        Clear Queue
+                        {t.clearQueue}
                       </Button>
                     </div>
                   </CardContent>
@@ -1078,12 +1216,12 @@ function App() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Queue Results</CardTitle>
-                    <CardDescription>Completed items keep their own output links.</CardDescription>
+                    <CardTitle>{t.queueResultsTitle}</CardTitle>
+                    <CardDescription>{t.queueResultsDesc}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {queueItems.filter((item) => item.status === 'completed').length === 0 && (
-                      <p className="text-sm text-muted-foreground">No completed items yet.</p>
+                      <p className="text-sm text-muted-foreground">{t.noCompleted}</p>
                     )}
                     {queueItems
                       .filter((item) => item.status === 'completed')
@@ -1091,14 +1229,14 @@ function App() {
                         <div key={`${item.id}-result`} className="rounded-lg border border-border p-3">
                           <p className="truncate text-sm font-semibold">{item.title}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {item.mode === 'youtube' ? 'Uploaded to YouTube' : 'Ready to download'}
+                            {item.mode === 'youtube' ? t.uploadedToYoutube : t.readyToDownload}
                           </p>
                           <div className="mt-3">
                             {item.mode === 'youtube' && item.youtubeUrl ? (
                               <Button asChild variant="outline" className="w-full">
                                 <a href={item.youtubeUrl} target="_blank" rel="noreferrer">
                                   <ExternalLink aria-hidden="true" />
-                                  Open YouTube Video
+                                  {t.openYoutubeVideo}
                                 </a>
                               </Button>
                             ) : (
@@ -1106,7 +1244,7 @@ function App() {
                                 <Button asChild variant="outline" className="w-full">
                                   <a href={item.downloadHref} download={`${slugifyTitle(item.title)}.mp4`}>
                                     <Download aria-hidden="true" />
-                                    Download MP4
+                                    {t.downloadMp4}
                                   </a>
                                 </Button>
                               )
@@ -1127,54 +1265,62 @@ function App() {
           <TabsContent value="docs">
             <Card>
               <CardHeader>
-                <CardTitle>How to Use / วิธีใช้งาน</CardTitle>
-                <CardDescription>Quick flow for batch conversion and YouTube queue upload.</CardDescription>
+                <CardTitle>{t.docsTitle}</CardTitle>
+                <CardDescription>{t.docsDesc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 <DocStep
                   number={1}
                   title="Add Files Per Item"
-                  titleTh="เพิ่มไฟล์ในแต่ละรายการ"
+                  titleTh={locale === 'th' ? 'เพิ่มไฟล์ในแต่ละรายการ' : ''}
                   body="Choose one MP3 and optional cover image, set destination mode, then click Add Item to Queue."
-                  bodyTh="เลือก MP3 และรูปปก (ไม่บังคับ) เลือกปลายทาง แล้วกด Add Item to Queue"
+                  bodyTh={locale === 'th' ? 'เลือก MP3 และรูปปก (ไม่บังคับ) เลือกปลายทาง แล้วกด Add Item to Queue' : ''}
                 />
                 <DocStep
                   number={2}
                   title="Set Unique YouTube Metadata"
-                  titleTh="ตั้งค่าข้อมูล YouTube แยกรายการ"
+                  titleTh={locale === 'th' ? 'ตั้งค่าข้อมูล YouTube แยกรายการ' : ''}
                   body="When mode is YouTube, set Title, Description, Privacy, Category, and optional Playlist for that specific queue item."
-                  bodyTh="ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description, Privacy, Category และ Playlist (ไม่บังคับ) แยกสำหรับรายการนั้น"
+                  bodyTh={
+                    locale === 'th'
+                      ? 'ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description, Privacy, Category และ Playlist (ไม่บังคับ) แยกสำหรับรายการนั้น'
+                      : ''
+                  }
                 />
                 <DocStep
                   number={3}
                   title="Arrange Processing Order"
-                  titleTh="จัดลำดับการประมวลผล"
+                  titleTh={locale === 'th' ? 'จัดลำดับการประมวลผล' : ''}
                   body="Use Up/Down controls in Queue Order. The top item runs first."
-                  bodyTh="ใช้ปุ่มขึ้น/ลงใน Queue Order โดยรายการบนสุดจะรันก่อน"
+                  bodyTh={locale === 'th' ? 'ใช้ปุ่มขึ้น/ลงใน Queue Order โดยรายการบนสุดจะรันก่อน' : ''}
                 />
                 <DocStep
                   number={4}
                   title="Start Queue"
-                  titleTh="เริ่มคิว"
+                  titleTh={locale === 'th' ? 'เริ่มคิว' : ''}
                   body="Click Start Queue. Conversion runs in parallel, while YouTube uploads continue one-by-one."
-                  bodyTh="กด Start Queue ระบบจะแปลงพร้อมกันหลายรายการ และอัปโหลด YouTube ทีละรายการตามลำดับ"
+                  bodyTh={
+                    locale === 'th'
+                      ? 'กด Start Queue ระบบจะแปลงพร้อมกันหลายรายการ และอัปโหลด YouTube ทีละรายการตามลำดับ'
+                      : ''
+                  }
                 />
                 <DocStep
                   number={5}
                   title="Review Outputs"
-                  titleTh="ตรวจผลลัพธ์"
+                  titleTh={locale === 'th' ? 'ตรวจผลลัพธ์' : ''}
                   body="Download-mode items show MP4 buttons. YouTube-mode items show direct video links."
-                  bodyTh="รายการโหมด Download จะมีปุ่มดาวน์โหลด MP4 และโหมด YouTube จะมีลิงก์วิดีโอโดยตรง"
+                  bodyTh={
+                    locale === 'th'
+                      ? 'รายการโหมด Download จะมีปุ่มดาวน์โหลด MP4 และโหมด YouTube จะมีลิงก์วิดีโอโดยตรง'
+                      : ''
+                  }
                 />
 
                 <div className="rounded-lg border border-border bg-muted/40 p-4">
-                  <p className="font-semibold">Notes / หมายเหตุ</p>
-                  <p className="mt-2 text-muted-foreground">
-                    Browser conversion can be heavy on memory. For best stability, keep one browser tab active while queue is running.
-                  </p>
-                  <p className="mt-2 text-muted-foreground">
-                    การแปลงบนเบราว์เซอร์ใช้หน่วยความจำค่อนข้างสูง เพื่อความเสถียรให้เปิดแท็บนี้ไว้ระหว่างรันคิว
-                  </p>
+                  <p className="font-semibold">{t.notes}</p>
+                  <p className="mt-2 text-muted-foreground">{t.notesEn}</p>
+                  {locale === 'th' ? <p className="mt-2 text-muted-foreground">{t.notesTh}</p> : null}
                 </div>
               </CardContent>
             </Card>
@@ -1183,23 +1329,13 @@ function App() {
           <TabsContent value="donate">
             <Card>
               <CardHeader>
-                <CardTitle>{locale === 'th' ? 'สนับสนุนโปรเจกต์' : 'Donate'}</CardTitle>
-                <CardDescription>
-                  {locale === 'th'
-                    ? 'ช่วยสนับสนุนค่าเซิร์ฟเวอร์และการพัฒนาฟีเจอร์ใหม่'
-                    : 'Support future improvements of MP3 to MP4 Studio.'}
-                </CardDescription>
+                <CardTitle>{t.donateTitle}</CardTitle>
+                <CardDescription>{t.donateDesc}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-lg border border-border bg-muted/40 p-4">
-                  <p className="font-semibold">
-                    {locale === 'th' ? 'ทำไมการสนับสนุนจึงสำคัญ' : 'Why support matters'}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {locale === 'th'
-                      ? 'ทุกการสนับสนุนช่วยค่าโครงสร้างพื้นฐาน ความปลอดภัย และการปรับปรุง UX อย่างต่อเนื่อง'
-                      : 'Donations help pay for infrastructure, security updates, and continuous UX improvements.'}
-                  </p>
+                  <p className="font-semibold">{t.supportWhy}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{t.supportBody}</p>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -1210,13 +1346,13 @@ function App() {
                       className="mx-auto w-full max-w-[180px] rounded-md border border-border bg-white p-2"
                     />
                     <p className="mt-3 text-center text-xs text-muted-foreground">
-                      {locale === 'th' ? 'สแกนเพื่อโดเนตผ่าน PromptPay' : 'Scan to donate via PromptPay'}
+                      {t.scanPromptPay}
                     </p>
                   </div>
                   <DonateMethod
                     title="PromptPay"
                     value="0956790178"
-                    hint={locale === 'th' ? 'ชื่อบัญชี: วีระพล ขอร้อง' : 'Account name: วีระพล ขอร้อง'}
+                    hint={t.accountName}
                   />
                 </div>
 
@@ -1224,12 +1360,12 @@ function App() {
                   <DonateMethod
                     title="PayPal"
                     value="https://paypal.me/50wallet"
-                    hint={locale === 'th' ? 'ช่องทางเสริมเพิ่มเติม' : 'Optional additional channel.'}
+                    hint={t.optionalChannel}
                   />
                   <DonateMethod
                     title="Tipme"
                     value="https://tipme.in.th/9ab9153140370a5811370460"
-                    hint={locale === 'th' ? 'ช่องทางทิปสำหรับผู้ใช้ในไทย' : 'Thai tipping channel.'}
+                    hint={t.thaiTipChannel}
                   />
                 </div>
               </CardContent>
@@ -1241,7 +1377,7 @@ function App() {
   );
 }
 
-function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
+function FileDrop({ accept, file, icon: Icon, label, hint, onChange, previewUrl }) {
   const inputRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -1290,7 +1426,7 @@ function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
       <div>
         <p className={cn('font-semibold', previewUrl && 'text-white')}>{label}</p>
         <p className={cn('mt-1 text-sm text-muted-foreground', previewUrl && 'text-white/80')}>
-          {file ? `${file.name} - ${formatBytes(file.size)}` : 'Click or drag file here'}
+          {file ? `${file.name} - ${formatBytes(file.size)}` : hint || 'Click or drag file here'}
         </p>
       </div>
     </button>
