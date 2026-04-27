@@ -93,6 +93,37 @@ export function publicYoutubeSession(session) {
   };
 }
 
+export async function getYoutubePlaylists(session) {
+  const oauth = createOAuthClient();
+  oauth.setCredentials(session.tokens);
+
+  const youtube = google.youtube({ version: 'v3', auth: oauth });
+  const playlists = [];
+  let pageToken;
+
+  do {
+    const response = await youtube.playlists.list({
+      part: ['snippet', 'status', 'contentDetails'],
+      mine: true,
+      maxResults: 50,
+      pageToken,
+    });
+
+    for (const item of response.data.items || []) {
+      playlists.push({
+        id: item.id || '',
+        title: item.snippet?.title || 'Untitled playlist',
+        itemCount: Number(item.contentDetails?.itemCount || 0),
+        privacyStatus: item.status?.privacyStatus || 'private',
+      });
+    }
+
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  return playlists;
+}
+
 export async function uploadVideoToYoutube({
   session,
   filePath,
@@ -101,6 +132,7 @@ export async function uploadVideoToYoutube({
   privacyStatus,
   categoryId,
   publishAt,
+  playlistId,
   onProgress,
 }) {
   const oauth = createOAuthClient();
@@ -156,6 +188,21 @@ export async function uploadVideoToYoutube({
 
   onProgress(100);
   const videoId = response.data.id;
+  if (videoId && playlistId) {
+    await youtube.playlistItems.insert({
+      part: ['snippet'],
+      requestBody: {
+        snippet: {
+          playlistId: String(playlistId),
+          resourceId: {
+            kind: 'youtube#video',
+            videoId,
+          },
+        },
+      },
+    });
+  }
+
   return {
     videoId,
     url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,

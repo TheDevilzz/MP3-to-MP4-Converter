@@ -21,6 +21,7 @@ import {
   completeYoutubeOAuth,
   createYoutubeAuthUrl,
   disconnectYoutubeSession,
+  getYoutubePlaylists,
   getYoutubeSession,
   getYoutubeSessionById,
   isYoutubeConfigured,
@@ -142,6 +143,19 @@ app.post('/api/youtube/disconnect', (req, res) => {
   res.json({ connected: false });
 });
 
+app.get('/api/youtube/playlists', async (req, res) => {
+  try {
+    const session = getYoutubeSession(req);
+    if (!session) {
+      return res.status(401).json({ error: 'Connect YouTube before loading playlists.' });
+    }
+    const playlists = await getYoutubePlaylists(session);
+    res.json({ playlists });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Could not load playlists.' });
+  }
+});
+
 app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
   try {
     const session = getYoutubeSession(req);
@@ -172,6 +186,7 @@ app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
       privacyStatus: String(body.privacyStatus || 'private'),
       categoryId: normalizeCategoryId(body.categoryId),
       publishAt: normalizePublishAt(body.scheduleEnabled, body.scheduledAt),
+      playlistId: normalizePlaylistId(body.playlistId),
       fileName: String(body.fileName || 'converted-mp3-video.mp4'),
       fileSize,
       receivedBytes: 0,
@@ -266,6 +281,7 @@ app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', async (req, res,
       privacyStatus: metadata.privacyStatus,
       categoryId: metadata.categoryId,
       publishAt: metadata.publishAt,
+      playlistId: metadata.playlistId,
       youtubeSessionId: metadata.youtubeSessionId,
       downloadUrl: null,
       youtubeUrl: null,
@@ -311,6 +327,7 @@ app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, ne
     const privacyStatus = String(body.privacyStatus || 'private');
     const categoryId = normalizeCategoryId(body.categoryId);
     const publishAt = normalizePublishAt(body.scheduleEnabled, body.scheduledAt);
+    const playlistId = normalizePlaylistId(body.playlistId);
 
     if (!video) {
       await cleanupUploadDir(req.uploadDir);
@@ -333,6 +350,7 @@ app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, ne
       privacyStatus,
       categoryId,
       publishAt,
+      playlistId,
       youtubeSessionId: session.id,
       downloadUrl: null,
       youtubeUrl: null,
@@ -379,6 +397,7 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
     const privacyStatus = String(body.privacyStatus || 'private');
     const categoryId = normalizeCategoryId(body.categoryId);
     const publishAt = normalizePublishAt(body.scheduleEnabled, body.scheduledAt);
+    const playlistId = normalizePlaylistId(body.playlistId);
 
     if (!audio || !image) {
       await cleanupUploadDir(req.uploadDir);
@@ -407,6 +426,7 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
       privacyStatus,
       categoryId,
       publishAt,
+      playlistId,
       youtubeSessionId,
       downloadUrl: null,
       youtubeUrl: null,
@@ -574,6 +594,7 @@ async function processJob(id) {
       privacyStatus: job.privacyStatus,
       categoryId: job.categoryId,
       publishAt: job.publishAt,
+      playlistId: job.playlistId,
       onProgress: (percent) => {
         patchJob(id, {
           stage: 'uploading',
@@ -627,10 +648,11 @@ async function processClientYoutubeJob(id) {
     filePath: job.outputPath,
     title: job.title,
     description: job.description,
-    privacyStatus: job.privacyStatus,
-    categoryId: job.categoryId,
-    publishAt: job.publishAt,
-    onProgress: (percent) => {
+      privacyStatus: job.privacyStatus,
+      categoryId: job.categoryId,
+      publishAt: job.publishAt,
+      playlistId: job.playlistId,
+      onProgress: (percent) => {
       patchJob(id, {
         stage: 'uploading',
         uploadProgress: percent,
@@ -717,6 +739,11 @@ function normalizePublishAt(scheduleEnabled, scheduledAt) {
   const date = new Date(scheduledAt || '');
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
+}
+
+function normalizePlaylistId(value) {
+  const stringValue = String(value || '').trim();
+  return stringValue || null;
 }
 
 async function cleanupUploadDir(dir) {

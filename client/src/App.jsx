@@ -72,6 +72,7 @@ function App() {
   const [editorDescription, setEditorDescription] = useState('');
   const [editorPrivacyStatus, setEditorPrivacyStatus] = useState('private');
   const [editorCategoryId, setEditorCategoryId] = useState('22');
+  const [editorPlaylistId, setEditorPlaylistId] = useState('');
   const [editorScheduleEnabled, setEditorScheduleEnabled] = useState(false);
   const [editorScheduledAt, setEditorScheduledAt] = useState('');
 
@@ -84,6 +85,7 @@ function App() {
     connected: false,
     channel: null,
   });
+  const [youtubePlaylists, setYoutubePlaylists] = useState([]);
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
   const [notice, setNotice] = useState(() =>
     initialQuery.get('youtube') === 'connected' ? 'YouTube connected.' : '',
@@ -132,10 +134,16 @@ function App() {
     fetch(`${API_URL}/api/youtube/status`, { credentials: 'include' })
       .then((response) => response.json())
       .then((data) => {
-        if (active) setYoutube(data);
+        if (active) {
+          setYoutube(data);
+          if (data.connected) loadYoutubePlaylists().catch(() => {});
+        }
       })
       .catch(() => {
-        if (active) setYoutube({ configured: false, connected: false, channel: null });
+        if (active) {
+          setYoutube({ configured: false, connected: false, channel: null });
+          setYoutubePlaylists([]);
+        }
       });
 
     fetch(`${API_URL}/api/health`, { credentials: 'include' })
@@ -189,6 +197,20 @@ function App() {
       credentials: 'include',
     });
     setYoutube((current) => ({ ...current, connected: false, channel: null }));
+    setYoutubePlaylists([]);
+    setEditorPlaylistId('');
+  }
+
+  async function loadYoutubePlaylists() {
+    const response = await fetch(`${API_URL}/api/youtube/playlists`, {
+      credentials: 'include',
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      setYoutubePlaylists([]);
+      throw new Error(data.error || 'Could not load YouTube playlists.');
+    }
+    setYoutubePlaylists(Array.isArray(data.playlists) ? data.playlists : []);
   }
 
   function addQueueItem() {
@@ -223,6 +245,7 @@ function App() {
       description: editorDescription.trim(),
       privacyStatus: editorPrivacyStatus,
       categoryId: editorCategoryId,
+      playlistId: editorPlaylistId || null,
       scheduleEnabled: editorScheduleEnabled,
       scheduledAt: editorScheduleEnabled ? toIsoDateTime(editorScheduledAt) : null,
       status: 'queued',
@@ -247,6 +270,7 @@ function App() {
     setEditorDescription('');
     setEditorTitle('Converted MP3 Video');
     setEditorCategoryId('22');
+    setEditorPlaylistId('');
     setEditorScheduleEnabled(false);
     setEditorScheduledAt('');
     setNotice('Queue item added.');
@@ -313,23 +337,9 @@ function App() {
         return;
       }
 
-      await Promise.all(queuedIds.map((id) => processQueueConversion(id)));
-
-      for (const id of queuedIds) {
-        const current = queueRef.current.find((item) => item.id === id);
-        if (!current || current.mode !== 'youtube') continue;
-        if (current.status === 'error') continue;
-        try {
-          await uploadConvertedQueueItem(id);
-        } catch (uploadError) {
-          updateQueueItem(id, {
-            status: 'error',
-            stage: 'error',
-            message: 'YouTube upload failed.',
-            error: getErrorMessage(uploadError, 'YouTube upload failed.'),
-          });
-        }
-      }
+      const conversionPromise = Promise.all(queuedIds.map((id) => processQueueConversion(id)));
+      await processYoutubeUploadsInQueueOrder(queuedIds);
+      await conversionPromise;
 
       setNotice('Queue finished.');
     } finally {
@@ -473,6 +483,37 @@ function App() {
     await subscribeToYoutubeJob(jobId, itemId);
   }
 
+  async function processYoutubeUploadsInQueueOrder(itemIds) {
+    for (const itemId of itemIds) {
+      const current = queueRef.current.find((item) => item.id === itemId);
+      if (!current || current.mode !== 'youtube') continue;
+
+      const isReady = await waitUntilYoutubeItemReadyForUpload(itemId);
+      if (!isReady) continue;
+
+      try {
+        await uploadConvertedQueueItem(itemId);
+      } catch (uploadError) {
+        updateQueueItem(itemId, {
+          status: 'error',
+          stage: 'error',
+          message: 'YouTube upload failed.',
+          error: getErrorMessage(uploadError, 'YouTube upload failed.'),
+        });
+      }
+    }
+  }
+
+  async function waitUntilYoutubeItemReadyForUpload(itemId) {
+    while (true) {
+      const current = queueRef.current.find((item) => item.id === itemId);
+      if (!current) return false;
+      if (current.status === 'error' || current.status === 'cancelled') return false;
+      if (current.status === 'converted' && current.convertedBlob) return true;
+      await delay(250);
+    }
+  }
+
   async function sendClientMp4ToYoutube(mp4Blob, itemId, itemMeta) {
     const { uploadId } = await postJson('/api/jobs/client-youtube/uploads', {
       fileName: `${slugifyTitle(itemMeta.title)}.mp4`,
@@ -481,6 +522,7 @@ function App() {
       description: itemMeta.description,
       privacyStatus: itemMeta.privacyStatus,
       categoryId: itemMeta.categoryId,
+      playlistId: itemMeta.playlistId,
       scheduleEnabled: itemMeta.scheduleEnabled,
       scheduledAt: itemMeta.scheduledAt,
     });
@@ -762,7 +804,7 @@ function App() {
                           )}
                         </div>
 
-                        <div className="grid gap-4 sm:grid-cols-3">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <div className="space-y-2">
                             <Label htmlFor="item-title">Title</Label>
                             <Input
@@ -799,6 +841,28 @@ function App() {
                                 </option>
                               ))}
                             </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="item-playlist">Playlist</Label>
+                            <select
+                              id="item-playlist"
+                              value={editorPlaylistId}
+                              onChange={(event) => setEditorPlaylistId(event.target.value)}
+                              disabled={!youtube.connected}
+                              className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <option value="">No playlist (upload only)</option>
+                              {youtubePlaylists.map((playlist) => (
+                                <option key={playlist.id} value={playlist.id}>
+                                  {playlist.title}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                              {youtube.connected
+                                ? `${youtubePlaylists.length} playlist(s) found on this channel.`
+                                : 'Connect YouTube to load playlists.'}
+                            </p>
                           </div>
                         </div>
 
@@ -1021,8 +1085,8 @@ function App() {
                   number={2}
                   title="Set Unique YouTube Metadata"
                   titleTh="ตั้งค่าข้อมูล YouTube แยกรายการ"
-                  body="When mode is YouTube, set Title, Description, and Privacy for that specific queue item."
-                  bodyTh="ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description และ Privacy แยกสำหรับรายการนั้น"
+                  body="When mode is YouTube, set Title, Description, Privacy, Category, and optional Playlist for that specific queue item."
+                  bodyTh="ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description, Privacy, Category และ Playlist (ไม่บังคับ) แยกสำหรับรายการนั้น"
                 />
                 <DocStep
                   number={3}
@@ -1389,6 +1453,12 @@ function toIsoDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function postJson(pathname, body) {
