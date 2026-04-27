@@ -5,6 +5,8 @@ import { config } from './config.js';
 const require = createRequire(import.meta.url);
 const GTTS = require('gtts');
 
+const MAX_CHARS_PER_SEGMENT = 90;
+
 export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1 }) {
   const normalizedText = String(text || '').trim();
   if (!normalizedText) {
@@ -20,12 +22,45 @@ export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1 }) {
   const tts = new GTTS(normalizedText, String(lang || 'th'), false);
   const stream = tts.stream();
   const baseAudio = await streamToBuffer(stream);
-
-  // gTTS supports only normal/slow modes, so apply exact speed with FFmpeg in-memory.
-  if (Math.abs(normalizedSpeed - 1) < 0.01) {
+  if (!baseAudio.length) {
+    throw new Error('gTTS returned empty audio. Please try again or check outbound network access to Google TTS.');
+  }
+  // Requested behavior:
+  // - speed <= 1.10: return raw chunk and let client merge chunks directly.
+  // - speed > 1.10: process each chunk through FFmpeg before returning.
+  if (normalizedSpeed <= 1.1) {
     return baseAudio;
   }
   return await remapAudioSpeed(baseAudio, normalizedSpeed);
+}
+
+export async function synthesizeLongTextToMp3({ text, lang = 'th', speed = 1 }) {
+  const normalizedText = String(text || '').replace(/\r/g, '').trim();
+  if (!normalizedText) {
+    throw new Error('Text is required for T2S.');
+  }
+
+  const segments = splitForTts(normalizedText, MAX_CHARS_PER_SEGMENT);
+  if (!segments.length) {
+    throw new Error('No valid text segments for T2S.');
+  }
+
+  // Process each segment through the same FFmpeg speed pipeline first.
+  const segmentBuffers = [];
+  for (const segment of segments) {
+    const segmentAudio = await synthesizeTextToMp3({ text: segment, lang, speed });
+    if (segmentAudio.length) {
+      segmentBuffers.push(segmentAudio);
+    }
+  }
+
+  if (!segmentBuffers.length) {
+    throw new Error('T2S could not generate audio segments.');
+  }
+
+  // Merge all processed segments and normalize again as one clean MP3 stream.
+  const mergedBuffer = Buffer.concat(segmentBuffers);
+  return await normalizeMp3Buffer(mergedBuffer);
 }
 
 function clamp(value, min, max) {
@@ -38,15 +73,66 @@ async function remapAudioSpeed(inputBuffer, speed) {
     '-hide_banner',
     '-loglevel',
     'error',
+    '-f',
+    'mp3',
     '-i',
     'pipe:0',
     '-filter:a',
     atempoFilter,
+    '-map_metadata',
+    '-1',
+    '-id3v2_version',
+    '0',
+    '-write_xing',
+    '0',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    '-ar',
+    '24000',
+    '-ac',
+    '1',
     '-f',
     'mp3',
     'pipe:1',
   ];
 
+  return await runFfmpegMp3Transform(inputBuffer, ffmpegArgs);
+}
+
+async function normalizeMp3Buffer(inputBuffer) {
+  const ffmpegArgs = [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'mp3',
+    '-i',
+    'pipe:0',
+    '-map_metadata',
+    '-1',
+    '-id3v2_version',
+    '0',
+    '-write_xing',
+    '0',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    '-ar',
+    '24000',
+    '-ac',
+    '1',
+    '-f',
+    'mp3',
+    'pipe:1',
+  ];
+
+  return await runFfmpegMp3Transform(inputBuffer, ffmpegArgs);
+}
+
+async function runFfmpegMp3Transform(inputBuffer, ffmpegArgs) {
   return await new Promise((resolve, reject) => {
     const ffmpeg = spawn(config.ffmpegPath, ffmpegArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -91,6 +177,42 @@ function buildAtempoFilter(speed) {
   }
   parts.push(`atempo=${ratio.toFixed(4)}`);
   return parts.join(',');
+}
+
+function splitForTts(text, maxChars) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return [];
+
+  const sentenceChunks = cleaned
+    .split(/(?<=[.!?।。！？\n])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const output = [];
+  let current = '';
+  for (const sentence of sentenceChunks) {
+    if (sentence.length > maxChars) {
+      if (current) {
+        output.push(current);
+        current = '';
+      }
+      for (let i = 0; i < sentence.length; i += maxChars) {
+        output.push(sentence.slice(i, i + maxChars));
+      }
+      continue;
+    }
+
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length > maxChars) {
+      if (current) output.push(current);
+      current = sentence;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) output.push(current);
+  return output;
 }
 
 function streamToBuffer(stream) {

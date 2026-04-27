@@ -118,18 +118,24 @@ export function T2SPanel({ apiUrl }) {
     const item = queueRef.current.find((row) => row.id === itemId);
     if (!item) return;
 
-    const chunks = splitTextForT2s(item.text);
-    if (!chunks.length) {
+    const text = String(item.text || '').trim();
+    if (!text) {
       patchItem(itemId, { status: 'error', message: 'No text to synthesize.', error: 'Empty content.' });
       return;
     }
 
     patchItem(itemId, {
       status: 'running',
-      message: `Generating speech chunks at ${Math.round(speed * 100)}%.`,
-      progress: 1,
+      message: `Generating speech at ${Math.round(speed * 100)}%.`,
+      progress: 10,
       error: '',
     });
+
+    const chunks = splitTextForT2s(text);
+    if (!chunks.length) {
+      patchItem(itemId, { status: 'error', message: 'No text to synthesize.', error: 'Empty content.' });
+      return;
+    }
 
     const audioParts = [];
     for (let index = 0; index < chunks.length; index += 1) {
