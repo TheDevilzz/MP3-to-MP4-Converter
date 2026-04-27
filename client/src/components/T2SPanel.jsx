@@ -231,9 +231,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
       audioParts.push(new Uint8Array(buffer));
       patchItem(itemId, {
         progress: Math.round(((index + 1) / chunks.length) * 100),
-        message: `${copy.generatedChunks} ${index + 1}/${chunks.length} chunk(s) @ ${Math.round(
-          speed * 100,
-        )}%.`,
+        message: `${copy.generatedChunks} ${index + 1}`,
       });
     }
 
@@ -332,7 +330,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="t2s-speed">
-                {copy.speed} ({speed.toFixed(2)}x / {Math.round(speed * 100)}%)
+                {copy.speed} ({speed.toFixed(2)}x)
               </Label>
               <Input
                 id="t2s-speed"
@@ -504,49 +502,30 @@ function createT2sItem({ sourceName, outputName, text }) {
   };
 }
 
-function splitTextForT2s(text, maxLength = 1200) {
+function splitTextForT2s(text, maxLength = 1200, linesPerChunk = 5) {
   const normalized = String(text || '').replace(/\r/g, '').trim();
   if (!normalized) return [];
 
-  const hardParts = normalized
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
     .filter(Boolean);
 
+  if (!lines.length) return [];
+
   const chunks = [];
-  for (const block of hardParts) {
+  for (let index = 0; index < lines.length; index += linesPerChunk) {
+    const block = lines.slice(index, index + linesPerChunk).join('\n').trim();
+    if (!block) continue;
+
     if (block.length <= maxLength) {
       chunks.push(block);
       continue;
     }
 
-    const sentences = block
-      .split(/(?<=[.!?।。！？])\s+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    let current = '';
-
-    for (const sentence of sentences) {
-      if (sentence.length > maxLength) {
-        if (current) {
-          chunks.push(current);
-          current = '';
-        }
-        for (let start = 0; start < sentence.length; start += maxLength) {
-          chunks.push(sentence.slice(start, start + maxLength));
-        }
-        continue;
-      }
-      const next = current ? `${current} ${sentence}` : sentence;
-      if (next.length > maxLength) {
-        if (current) chunks.push(current);
-        current = sentence;
-      } else {
-        current = next;
-      }
+    for (let start = 0; start < block.length; start += maxLength) {
+      chunks.push(block.slice(start, start + maxLength));
     }
-
-    if (current) chunks.push(current);
   }
 
   return chunks;
