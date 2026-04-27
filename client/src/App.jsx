@@ -34,6 +34,8 @@ import { Textarea } from './components/ui/textarea';
 import { T2SPanel } from './components/T2SPanel';
 import { cn } from './lib/utils';
 import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
+import generatePromptPayPayload from 'promptpay-qr';
+import QRCode from 'qrcode';
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -62,6 +64,7 @@ function App() {
   const phaseRef = useRef({});
   const conversionStartedAtRef = useRef({});
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [locale, setLocale] = useState(() => localStorage.getItem('ui-locale') || 'th');
   const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const [view, setView] = useState('studio');
 
@@ -89,6 +92,7 @@ function App() {
   });
   const [youtubePlaylists, setYoutubePlaylists] = useState([]);
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
+  const [promptPayQrDataUrl, setPromptPayQrDataUrl] = useState('0956790178');
   const [notice, setNotice] = useState(() =>
     initialQuery.get('youtube') === 'connected' ? 'YouTube connected.' : '',
   );
@@ -117,6 +121,35 @@ function App() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('ui-locale', locale);
+  }, [locale]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const payload = generatePromptPayPayload('0956790178');
+        const qrDataUrl = await QRCode.toDataURL(payload, {
+          margin: 1,
+          width: 380,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff',
+          },
+        });
+        if (active) setPromptPayQrDataUrl(qrDataUrl);
+      } catch {
+        if (active) setPromptPayQrDataUrl('');
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -649,6 +682,20 @@ function App() {
           <div className="flex items-center justify-between gap-3 sm:justify-end">
             <Badge variant={activeStatus.variant}>{activeStatus.label}</Badge>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+              <Label htmlFor="ui-locale" className="text-xs text-muted-foreground">
+                UI
+              </Label>
+              <select
+                id="ui-locale"
+                value={locale}
+                onChange={(event) => setLocale(event.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="th">TH</option>
+                <option value="en">EN</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
               <Sun className="size-4 text-muted-foreground" aria-hidden="true" />
               <Switch
                 checked={theme === 'dark'}
@@ -1074,7 +1121,7 @@ function App() {
           </TabsContent>
 
           <TabsContent value="t2s">
-            <T2SPanel apiUrl={API_URL} />
+            <T2SPanel apiUrl={API_URL} locale={locale} />
           </TabsContent>
 
           <TabsContent value="docs">
@@ -1136,30 +1183,40 @@ function App() {
           <TabsContent value="donate">
             <Card>
               <CardHeader>
-                <CardTitle>Donate</CardTitle>
-                <CardDescription>Support future improvements of MP3 to MP4 Studio.</CardDescription>
+                <CardTitle>{locale === 'th' ? 'สนับสนุนโปรเจกต์' : 'Donate'}</CardTitle>
+                <CardDescription>
+                  {locale === 'th'
+                    ? 'ช่วยสนับสนุนค่าเซิร์ฟเวอร์และการพัฒนาฟีเจอร์ใหม่'
+                    : 'Support future improvements of MP3 to MP4 Studio.'}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-lg border border-border bg-muted/40 p-4">
-                  <p className="font-semibold">Why support matters</p>
+                  <p className="font-semibold">
+                    {locale === 'th' ? 'ทำไมการสนับสนุนจึงสำคัญ' : 'Why support matters'}
+                  </p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Donations help pay for infrastructure, security updates, and continuous UX improvements.
+                    {locale === 'th'
+                      ? 'ทุกการสนับสนุนช่วยค่าโครงสร้างพื้นฐาน ความปลอดภัย และการปรับปรุง UX อย่างต่อเนื่อง'
+                      : 'Donations help pay for infrastructure, security updates, and continuous UX improvements.'}
                   </p>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
                   <div className="rounded-lg border border-border bg-card p-4">
                     <img
-                      src="https://promptpay.io/0956790178.png"
+                      src={promptPayQrDataUrl || 'https://promptpay.io/0956790178.png'}
                       alt="PromptPay QR 0956790178"
                       className="mx-auto w-full max-w-[180px] rounded-md border border-border bg-white p-2"
                     />
-                    <p className="mt-3 text-center text-xs text-muted-foreground">Scan to donate via PromptPay</p>
+                    <p className="mt-3 text-center text-xs text-muted-foreground">
+                      {locale === 'th' ? 'สแกนเพื่อโดเนตผ่าน PromptPay' : 'Scan to donate via PromptPay'}
+                    </p>
                   </div>
                   <DonateMethod
                     title="PromptPay"
                     value="0956790178"
-                    hint="Name: วีระพล ขอร้อง"
+                    hint={locale === 'th' ? 'ชื่อบัญชี: วีระพล ขอร้อง' : 'Account name: วีระพล ขอร้อง'}
                   />
                 </div>
 
@@ -1167,12 +1224,12 @@ function App() {
                   <DonateMethod
                     title="PayPal"
                     value="https://paypal.me/50wallet"
-                    hint="Optional additional channel."
+                    hint={locale === 'th' ? 'ช่องทางเสริมเพิ่มเติม' : 'Optional additional channel.'}
                   />
                   <DonateMethod
                     title="Tipme"
                     value="https://tipme.in.th/9ab9153140370a5811370460"
-                    hint="Thai tipping channel."
+                    hint={locale === 'th' ? 'ช่องทางทิปสำหรับผู้ใช้ในไทย' : 'Thai tipping channel.'}
                   />
                 </div>
               </CardContent>

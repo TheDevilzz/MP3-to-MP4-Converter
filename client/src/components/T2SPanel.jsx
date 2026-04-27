@@ -15,9 +15,81 @@ const T2S_LANGUAGES = [
   { value: 'zh-CN', label: 'Chinese (Mandarin)' },
 ];
 
-export function T2SPanel({ apiUrl }) {
+const UI_COPY = {
+  th: {
+    title: 'แปลงข้อความเป็นเสียง (gTTS)',
+    description: 'อัปโหลดไฟล์ .txt หรือวางข้อความ สร้างเสียงพร้อมกัน และดาวน์โหลด MP3 แยกไฟล์ได้',
+    language: 'ภาษาเสียง',
+    speed: 'ความเร็ว',
+    typeText: 'พิมพ์ข้อความ',
+    typePlaceholder: 'วางข้อความที่นี่...',
+    outputNamePlaceholder: 'ชื่อไฟล์ผลลัพธ์',
+    addTextItem: 'เพิ่มรายการข้อความ',
+    uploadTxt: 'อัปโหลดไฟล์ .txt',
+    uploadHint: 'เลือกไฟล์ .txt ได้หลายไฟล์ ประมวลผลพร้อมกันบนคิวฝั่ง client',
+    startQueue: 'เริ่มคิว T2S',
+    clearQueue: 'ล้างคิว',
+    queueTitle: 'คิว T2S',
+    queueDescription: 'ไฟล์อยู่ในหน่วยความจำเบราว์เซอร์เท่านั้น ฝั่งเซิร์ฟเวอร์ส่งกลับเฉพาะ chunk เสียง',
+    noItems: 'ยังไม่มีรายการข้อความ',
+    waitingAudio: 'รอผลลัพธ์เสียง',
+    download: 'ดาวน์โหลด',
+    saveAs: 'เลือกตำแหน่งบันทึก',
+    sourceSize: 'ขนาดข้อความต้นฉบับ',
+    emptyText: 'กรุณากรอกข้อความก่อนเพิ่มคิว',
+    txtOnly: 'กรุณาอัปโหลดเฉพาะไฟล์ .txt',
+    emptyFiles: 'ไฟล์ข้อความที่อัปโหลดว่างทั้งหมด',
+    queueCleared: 'ล้างคิว T2S แล้ว',
+    addSuccess: 'เพิ่มรายการข้อความแล้ว',
+    filesAdded: 'เพิ่มไฟล์แล้ว',
+    noQueue: 'กรุณาเพิ่มรายการข้อความอย่างน้อย 1 รายการ',
+    queueFinished: 'ประมวลผลคิว T2S เสร็จแล้ว',
+    generating: 'กำลังสร้างเสียงที่ความเร็ว',
+    generatedChunks: 'สร้างเสียงแล้ว',
+    ready: 'ไฟล์เสียงพร้อมแล้ว',
+    noText: 'ไม่มีข้อความสำหรับแปลงเสียง',
+    selectSave: 'เลือกว่าเซฟไฟล์ไว้ที่ไหน',
+  },
+  en: {
+    title: 'Text to Speech (gTTS)',
+    description: 'Upload .txt or paste text, generate speech in parallel, and download named MP3 files.',
+    language: 'Speech language',
+    speed: 'Speed',
+    typeText: 'Type text',
+    typePlaceholder: 'Paste text here...',
+    outputNamePlaceholder: 'output file name',
+    addTextItem: 'Add text item',
+    uploadTxt: 'Upload .txt files',
+    uploadHint: 'Select one or many .txt files. Processing runs in parallel on the client queue.',
+    startQueue: 'Start T2S Queue',
+    clearQueue: 'Clear queue',
+    queueTitle: 'T2S Queue',
+    queueDescription: 'Files stay in browser memory. Server only streams generated audio chunks.',
+    noItems: 'No text items yet.',
+    waitingAudio: 'Waiting for audio output',
+    download: 'Download',
+    saveAs: 'Save as...',
+    sourceSize: 'Source size',
+    emptyText: 'Please enter text before adding to queue.',
+    txtOnly: 'Please upload .txt files only.',
+    emptyFiles: 'Uploaded text files are empty.',
+    queueCleared: 'T2S queue cleared.',
+    addSuccess: 'Text item added.',
+    filesAdded: 'file(s) added.',
+    noQueue: 'Please add at least one text item first.',
+    queueFinished: 'T2S queue finished.',
+    generating: 'Generating speech at speed',
+    generatedChunks: 'Generated',
+    ready: 'Speech ready.',
+    noText: 'No text to synthesize.',
+    selectSave: 'Choose where to save the generated file.',
+  },
+};
+
+export function T2SPanel({ apiUrl, locale = 'th' }) {
   const uploadRef = useRef(null);
   const queueRef = useRef([]);
+  const copy = UI_COPY[locale] || UI_COPY.en;
   const [language, setLanguage] = useState('th');
   const [speed, setSpeed] = useState(1);
   const [typedText, setTypedText] = useState('');
@@ -37,7 +109,7 @@ export function T2SPanel({ apiUrl }) {
   function addTypedText() {
     const text = String(typedText || '').trim();
     if (!text) {
-      setError('Please enter text before adding to queue.');
+      setError(copy.emptyText);
       return;
     }
     setError('');
@@ -51,13 +123,13 @@ export function T2SPanel({ apiUrl }) {
       }),
     ]);
     setTypedText('');
-    setNotice('Text item added.');
+    setNotice(copy.addSuccess);
   }
 
   async function addTextFiles(fileList) {
     const files = Array.from(fileList || []).filter((file) => file.name.toLowerCase().endsWith('.txt'));
     if (!files.length) {
-      setError('Please upload .txt files only.');
+      setError(copy.txtOnly);
       return;
     }
     setError('');
@@ -77,12 +149,12 @@ export function T2SPanel({ apiUrl }) {
     }
 
     if (!nextItems.length) {
-      setError('Uploaded text files are empty.');
+      setError(copy.emptyFiles);
       return;
     }
 
     setItems((prev) => [...prev, ...nextItems]);
-    setNotice(`${nextItems.length} file(s) added.`);
+    setNotice(`${nextItems.length} ${copy.filesAdded}`);
   }
 
   function clearQueue() {
@@ -91,7 +163,7 @@ export function T2SPanel({ apiUrl }) {
       if (item.audioUrl) URL.revokeObjectURL(item.audioUrl);
     }
     setItems([]);
-    setNotice('T2S queue cleared.');
+    setNotice(copy.queueCleared);
     setError('');
   }
 
@@ -99,7 +171,7 @@ export function T2SPanel({ apiUrl }) {
     if (isRunning) return;
     const queued = queueRef.current.filter((item) => item.status === 'queued');
     if (!queued.length) {
-      setError('Please add at least one text item first.');
+      setError(copy.noQueue);
       return;
     }
 
@@ -108,7 +180,7 @@ export function T2SPanel({ apiUrl }) {
     setIsRunning(true);
     try {
       await runWithConcurrency(queued.map((item) => item.id), 3, processItem);
-      setNotice('T2S queue finished.');
+      setNotice(copy.queueFinished);
     } finally {
       setIsRunning(false);
     }
@@ -120,20 +192,20 @@ export function T2SPanel({ apiUrl }) {
 
     const text = String(item.text || '').trim();
     if (!text) {
-      patchItem(itemId, { status: 'error', message: 'No text to synthesize.', error: 'Empty content.' });
+      patchItem(itemId, { status: 'error', message: copy.noText, error: 'Empty content.' });
       return;
     }
 
     patchItem(itemId, {
       status: 'running',
-      message: `Generating speech at ${Math.round(speed * 100)}%.`,
+      message: `${copy.generating} ${Math.round(speed * 100)}%.`,
       progress: 10,
       error: '',
     });
 
     const chunks = splitTextForT2s(text);
     if (!chunks.length) {
-      patchItem(itemId, { status: 'error', message: 'No text to synthesize.', error: 'Empty content.' });
+      patchItem(itemId, { status: 'error', message: copy.noText, error: 'Empty content.' });
       return;
     }
 
@@ -159,7 +231,9 @@ export function T2SPanel({ apiUrl }) {
       audioParts.push(new Uint8Array(buffer));
       patchItem(itemId, {
         progress: Math.round(((index + 1) / chunks.length) * 100),
-        message: `Generated ${index + 1}/${chunks.length} chunk(s) at ${Math.round(speed * 100)}%.`,
+        message: `${copy.generatedChunks} ${index + 1}/${chunks.length} chunk(s) @ ${Math.round(
+          speed * 100,
+        )}%.`,
       });
     }
 
@@ -168,9 +242,10 @@ export function T2SPanel({ apiUrl }) {
     const audioUrl = URL.createObjectURL(blob);
     patchItem(itemId, {
       status: 'completed',
-      message: 'Speech ready.',
+      message: copy.ready,
       progress: 100,
       audioUrl,
+      audioBlob: blob,
       bytes: blob.size,
     });
   }
@@ -198,19 +273,50 @@ export function T2SPanel({ apiUrl }) {
     });
   }
 
+  async function saveItemAs(item) {
+    if (!item?.audioBlob) return;
+    const fileName = ensureMp3Extension(item.outputName || 'speech');
+
+    try {
+      if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'MP3 Audio',
+              accept: {
+                'audio/mpeg': ['.mp3'],
+              },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(item.audioBlob);
+        await writable.close();
+        return;
+      }
+
+      const fallbackLink = document.createElement('a');
+      fallbackLink.href = item.audioUrl;
+      fallbackLink.download = fileName;
+      fallbackLink.click();
+    } catch (saveError) {
+      if (saveError?.name === 'AbortError') return;
+      setError(getErrorMessage(saveError, copy.selectSave));
+    }
+  }
+
   return (
     <section className="space-y-5">
       <Card>
         <CardHeader>
-          <CardTitle>Text to Speech (gTTS)</CardTitle>
-          <CardDescription>
-            Upload .txt or paste text, generate speech in parallel, and download named MP3 files.
-          </CardDescription>
+          <CardTitle>{copy.title}</CardTitle>
+          <CardDescription>{copy.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="t2s-language">Language</Label>
+              <Label htmlFor="t2s-language">{copy.language}</Label>
               <select
                 id="t2s-language"
                 value={language}
@@ -226,7 +332,7 @@ export function T2SPanel({ apiUrl }) {
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="t2s-speed">
-                Speed ({speed.toFixed(2)}x / {Math.round(speed * 100)}%)
+                {copy.speed} ({speed.toFixed(2)}x / {Math.round(speed * 100)}%)
               </Label>
               <Input
                 id="t2s-speed"
@@ -242,30 +348,30 @@ export function T2SPanel({ apiUrl }) {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
             <div className="space-y-2">
-              <Label htmlFor="t2s-text">Type text</Label>
+              <Label htmlFor="t2s-text">{copy.typeText}</Label>
               <Textarea
                 id="t2s-text"
                 value={typedText}
                 onChange={(event) => setTypedText(event.target.value)}
-                placeholder="Paste text here..."
+                placeholder={copy.typePlaceholder}
                 className="min-h-40"
               />
               <div className="flex flex-wrap gap-2">
                 <Input
                   value={typedName}
                   onChange={(event) => setTypedName(event.target.value)}
-                  placeholder="output file name"
+                  placeholder={copy.outputNamePlaceholder}
                   className="max-w-52"
                 />
                 <Button type="button" onClick={addTypedText} disabled={isRunning}>
                   <PlusIcon />
-                  Add text item
+                  {copy.addTextItem}
                 </Button>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Upload .txt files</Label>
+              <Label>{copy.uploadTxt}</Label>
               <button
                 type="button"
                 onClick={() => uploadRef.current?.click()}
@@ -288,7 +394,7 @@ export function T2SPanel({ apiUrl }) {
                   <UploadCloud className="size-5 text-primary" aria-hidden="true" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Select one or many .txt files. Processing runs in parallel on the client queue.
+                  {copy.uploadHint}
                 </p>
               </button>
             </div>
@@ -300,11 +406,11 @@ export function T2SPanel({ apiUrl }) {
           <div className="flex flex-wrap gap-2">
             <Button type="button" onClick={startQueue} disabled={isRunning || !pendingCount}>
               {isRunning ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
-              Start T2S Queue
+              {copy.startQueue}
             </Button>
             <Button type="button" variant="outline" onClick={clearQueue} disabled={isRunning}>
               <Trash2 aria-hidden="true" />
-              Clear queue
+              {copy.clearQueue}
             </Button>
           </div>
         </CardContent>
@@ -312,11 +418,11 @@ export function T2SPanel({ apiUrl }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>T2S Queue</CardTitle>
-          <CardDescription>Files stay in browser memory. Server only streams generated audio chunks.</CardDescription>
+          <CardTitle>{copy.queueTitle}</CardTitle>
+          <CardDescription>{copy.queueDescription}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!items.length && <p className="text-sm text-muted-foreground">No text items yet.</p>}
+          {!items.length && <p className="text-sm text-muted-foreground">{copy.noItems}</p>}
           {items.map((item, index) => (
             <div key={item.id} className="rounded-lg border border-border p-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -351,23 +457,29 @@ export function T2SPanel({ apiUrl }) {
                 {item.audioUrl ? (
                   <>
                     <audio controls src={item.audioUrl} className="h-10 w-full min-w-52" />
-                    <Button asChild>
+                    <Button asChild variant="outline">
                       <a href={item.audioUrl} download={item.outputName}>
                         <Download aria-hidden="true" />
-                        Download
+                        {copy.download}
                       </a>
+                    </Button>
+                    <Button type="button" onClick={() => saveItemAs(item)}>
+                      <Download aria-hidden="true" />
+                      {copy.saveAs}
                     </Button>
                   </>
                 ) : (
                   <div className="md:col-span-2 flex items-center text-xs text-muted-foreground">
                     <Volume2 className="mr-2 size-4" aria-hidden="true" />
-                    Waiting for audio output
+                    {copy.waitingAudio}
                   </div>
                 )}
               </div>
 
               {item.error && <p className="mt-2 text-xs text-destructive">{item.error}</p>}
-              <p className="mt-1 text-xs text-muted-foreground">Source size: {item.text.length.toLocaleString()} characters</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {copy.sourceSize}: {item.text.length.toLocaleString()} characters
+              </p>
             </div>
           ))}
         </CardContent>
@@ -388,6 +500,7 @@ function createT2sItem({ sourceName, outputName, text }) {
     error: '',
     bytes: 0,
     audioUrl: '',
+    audioBlob: null,
   };
 }
 
