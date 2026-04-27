@@ -9,10 +9,6 @@ const VIDEO_HEIGHT = 720;
 const VIDEO_CRF = 30;
 const AUDIO_BITRATE = '192k';
 
-let ffmpeg;
-let loadingPromise;
-let progressListenerRegistered = false;
-let currentProgressHandler = null;
 let coreAssetPromise;
 
 export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onProgress }) {
@@ -20,9 +16,13 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
     throw new Error('Missing MP3 file.');
   }
 
+  let currentProgressHandler = null;
   const engine = await loadFfmpeg((percent) => {
     onStage?.('loading');
     onProgress?.(Math.min(10, Math.round(percent * 10)));
+  });
+  engine.on('progress', ({ progress }) => {
+    currentProgressHandler?.(progress);
   });
 
   const audioName = `input-audio.${extensionFor(audioFile, 'mp3')}`;
@@ -130,34 +130,11 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
 }
 
 async function loadFfmpeg(onLoadProgress) {
-  if (!ffmpeg) {
-    ffmpeg = new FFmpeg();
-  }
-
-  if (!progressListenerRegistered) {
-    ffmpeg.on('progress', ({ progress }) => {
-      currentProgressHandler?.(progress);
-    });
-    progressListenerRegistered = true;
-  }
-
-  if (ffmpeg.loaded) return ffmpeg;
-
-  if (!loadingPromise) {
-    onLoadProgress?.(0.1);
-    loadingPromise = ffmpeg
-      .load(await getFfmpegCoreAssets())
-      .then(() => {
-        onLoadProgress?.(1);
-        return ffmpeg;
-      })
-      .catch((error) => {
-        loadingPromise = null;
-        throw error;
-      });
-  }
-
-  return loadingPromise;
+  const ffmpeg = new FFmpeg();
+  onLoadProgress?.(0.1);
+  await ffmpeg.load(await getFfmpegCoreAssets());
+  onLoadProgress?.(1);
+  return ffmpeg;
 }
 
 async function getFfmpegCoreAssets() {

@@ -646,7 +646,7 @@ function App() {
                             onChange={(event) => setUseSharedCover(event.target.checked)}
                           />
                           <span className="text-sm text-muted-foreground">
-                            Apply shared cover to all queue items when an item-specific cover is not selected.
+                            Apply shared cover when item-specific cover is not selected.
                           </span>
                         </label>
                       </div>
@@ -1037,14 +1037,30 @@ function App() {
 
 function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
   const inputRef = useRef(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  function pickFromDrop(event) {
+    event.preventDefault();
+    setIsDragOver(false);
+    const dropped = event.dataTransfer?.files?.[0];
+    if (!dropped) return;
+    onChange(dropped);
+  }
 
   return (
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={pickFromDrop}
       className={cn(
         'group flex min-h-48 cursor-pointer flex-col justify-between rounded-lg border border-dashed border-border bg-muted/35 p-4 text-left transition-colors duration-200 hover:border-primary/70 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         previewUrl && 'bg-cover bg-center',
+        isDragOver && 'border-primary bg-primary/10',
       )}
       style={
         previewUrl
@@ -1068,7 +1084,7 @@ function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
       <div>
         <p className={cn('font-semibold', previewUrl && 'text-white')}>{label}</p>
         <p className={cn('mt-1 text-sm text-muted-foreground', previewUrl && 'text-white/80')}>
-          {file ? `${file.name} - ${formatBytes(file.size)}` : 'Click to select file'}
+          {file ? `${file.name} - ${formatBytes(file.size)}` : 'Click or drag file here'}
         </p>
       </div>
     </button>
