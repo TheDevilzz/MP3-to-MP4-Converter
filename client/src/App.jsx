@@ -45,6 +45,7 @@ const initialJob = {
 function App() {
   const eventSourceRef = useRef(null);
   const downloadHrefRef = useRef('');
+  const conversionStartedAtRef = useRef(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const [mp3File, setMp3File] = useState(null);
@@ -181,6 +182,7 @@ function App() {
     eventSourceRef.current?.close();
     setIsSubmitting(true);
     setClientUploadProgress(0);
+    conversionStartedAtRef.current = null;
     setJob({
       ...initialJob,
       status: 'running',
@@ -201,6 +203,7 @@ function App() {
             }));
           }
           if (stage === 'preparing') {
+            conversionStartedAtRef.current = null;
             setJob((current) => ({
               ...current,
               stage: 'preparing',
@@ -209,6 +212,7 @@ function App() {
           }
         },
         onProgress: (percent) => {
+          const etaText = getConversionEtaText(percent, conversionStartedAtRef);
           setClientUploadProgress(percent >= 12 ? 100 : Math.round(percent * 8));
           setJob((current) => ({
             ...current,
@@ -219,8 +223,9 @@ function App() {
               ? Math.min(72, Math.round(percent * 0.72))
               : percent,
             message: percent >= 12
-              ? `Converting in browser ${percent}%`
+              ? `Converting in browser ${percent}%${etaText ? ` - ${etaText}` : ''}`
               : 'Loading browser FFmpeg engine.',
+            etaText,
           }));
         },
       });
@@ -237,6 +242,7 @@ function App() {
           convertProgress: 100,
           message: 'Your MP4 was created in this browser.',
           outputBytes: mp4Blob.size,
+          etaText: '',
         });
         setIsSubmitting(false);
         return;
@@ -248,6 +254,7 @@ function App() {
         convertProgress: 100,
         progress: 72,
         message: 'Sending converted MP4 to the upload service.',
+        etaText: '',
       }));
       setClientUploadProgress(0);
       const jobId = await sendClientMp4ToYoutube(mp4Blob);
@@ -263,6 +270,7 @@ function App() {
         stage: 'error',
         message: 'Browser conversion failed.',
         error: message,
+        etaText: '',
       });
     }
   }
@@ -605,6 +613,7 @@ function App() {
                   label="Converting"
                   value={job.convertProgress || 0}
                   active={job.stage === 'converting'}
+                  detail={job.etaText}
                 />
                 {mode === 'youtube' && (
                   <ProgressRow
@@ -724,7 +733,7 @@ function FileDrop({ accept, file, icon: Icon, label, onChange, previewUrl }) {
   );
 }
 
-function ProgressRow({ icon: Icon, label, value, active }) {
+function ProgressRow({ icon: Icon, label, value, active, detail }) {
   return (
     <div className="rounded-lg border border-border p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -737,6 +746,9 @@ function ProgressRow({ icon: Icon, label, value, active }) {
         </div>
         <span className="shrink-0 text-sm text-muted-foreground">{Math.round(value)}%</span>
       </div>
+      {detail && (
+        <p className="mb-3 text-xs font-medium text-muted-foreground">{detail}</p>
+      )}
       <Progress value={value} />
     </div>
   );
@@ -831,6 +843,40 @@ function getErrorMessage(error, fallback) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string') return error;
   return fallback;
+}
+
+function getConversionEtaText(percent, startedAtRef) {
+  if (percent < 15 || percent >= 100) return '';
+
+  const now = Date.now();
+  if (!startedAtRef.current) {
+    startedAtRef.current = now;
+    return '';
+  }
+
+  const elapsedSeconds = (now - startedAtRef.current) / 1000;
+  const completedAfterPreparation = percent - 12;
+  if (elapsedSeconds < 8 || completedAfterPreparation <= 2) return '';
+
+  const remainingSeconds = (elapsedSeconds / completedAfterPreparation) * (100 - percent);
+  if (!Number.isFinite(remainingSeconds) || remainingSeconds <= 0) return '';
+
+  return `about ${formatDuration(remainingSeconds)} remaining`;
+}
+
+function formatDuration(seconds) {
+  const roundedSeconds = Math.max(1, Math.round(seconds));
+  if (roundedSeconds < 60) return `${roundedSeconds}s`;
+
+  const minutes = Math.floor(roundedSeconds / 60);
+  const restSeconds = roundedSeconds % 60;
+  if (minutes < 60) {
+    return restSeconds ? `${minutes}m ${restSeconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
 }
 
 export default App;
