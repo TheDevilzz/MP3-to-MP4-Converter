@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const sourceDir = path.join(root, 'node_modules', '@ffmpeg', 'core', 'dist', 'umd');
+const sourceDir = path.join(root, 'node_modules', '@ffmpeg', 'core', 'dist', 'esm');
 const targetDir = path.join(root, 'public', 'ffmpeg');
 const assets = ['ffmpeg-core.js', 'ffmpeg-core.wasm'];
 

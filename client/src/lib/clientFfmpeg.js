@@ -3,6 +3,7 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 const CORE_URL = '/ffmpeg/ffmpeg-core.js';
 const WASM_URL = '/ffmpeg/ffmpeg-core.wasm';
+const CORE_ASSET_VERSION = 'esm-0.12.10';
 const VIDEO_WIDTH = 1280;
 const VIDEO_HEIGHT = 720;
 const VIDEO_CRF = 30;
@@ -135,8 +136,8 @@ async function loadFfmpeg(onLoadProgress) {
 
 async function getFfmpegCoreAssets() {
   if (!coreAssetPromise) {
-    const coreUrl = new URL(CORE_URL, window.location.origin).toString();
-    const wasmUrl = new URL(WASM_URL, window.location.origin).toString();
+    const coreUrl = versionedAssetUrl(CORE_URL);
+    const wasmUrl = versionedAssetUrl(WASM_URL);
 
     coreAssetPromise = Promise.all([
       toBlobURL(coreUrl, 'text/javascript'),
@@ -145,6 +146,12 @@ async function getFfmpegCoreAssets() {
   }
 
   return coreAssetPromise;
+}
+
+function versionedAssetUrl(pathname) {
+  const url = new URL(pathname, window.location.origin);
+  url.searchParams.set('v', CORE_ASSET_VERSION);
+  return url.toString();
 }
 
 async function cleanupVirtualFile(engine, filename) {
