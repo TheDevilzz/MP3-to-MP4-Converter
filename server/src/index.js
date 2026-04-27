@@ -476,7 +476,8 @@ app.get('/api/jobs/:id/download', (req, res) => {
 
 if (await pathExists(config.clientDistDir)) {
   app.use(express.static(config.clientDistDir));
-  app.get(/.*/, (_req, res) => {
+  app.use((req, res, next) => {
+    if (req.method !== 'GET') return next();
     res.sendFile(path.join(config.clientDistDir, 'index.html'));
   });
 }
