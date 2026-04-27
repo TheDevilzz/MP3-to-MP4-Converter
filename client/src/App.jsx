@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   FileAudio,
+  FileText,
   HeartHandshake,
   Image,
   Loader2,
@@ -30,6 +31,7 @@ import { Progress } from './components/ui/progress';
 import { Switch } from './components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Textarea } from './components/ui/textarea';
+import { T2SPanel } from './components/T2SPanel';
 import { cn } from './lib/utils';
 import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
 
@@ -659,10 +661,14 @@ function App() {
         </header>
 
         <Tabs value={view} onValueChange={setView} className="space-y-5">
-          <TabsList className="grid w-full grid-cols-3 sm:w-[420px]">
+          <TabsList className="grid w-full grid-cols-4 sm:w-[560px]">
             <TabsTrigger value="studio">
               <FileAudio aria-hidden="true" />
               Studio
+            </TabsTrigger>
+            <TabsTrigger value="t2s">
+              <FileText aria-hidden="true" />
+              T2S
             </TabsTrigger>
             <TabsTrigger value="docs">
               <BookOpenText aria-hidden="true" />
@@ -1065,6 +1071,10 @@ function App() {
                 </Card>
               </aside>
             </section>
+          </TabsContent>
+
+          <TabsContent value="t2s">
+            <T2SPanel apiUrl={API_URL} />
           </TabsContent>
 
           <TabsContent value="docs">

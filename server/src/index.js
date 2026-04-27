@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import { config } from './config.js';
 import { assertFfmpegAvailable, convertMp3ToMp4, fileExists } from './ffmpeg.js';
+import { synthesizeTextToMp3 } from './t2s.js';
 import {
   cleanupAndForgetJob,
   cleanupJobFiles,
@@ -73,7 +74,7 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 app.get('/api/health', async (_req, res) => {
@@ -141,6 +142,32 @@ app.get('/api/youtube/callback', async (req, res) => {
 app.post('/api/youtube/disconnect', (req, res) => {
   disconnectYoutubeSession(req, res);
   res.json({ connected: false });
+});
+
+app.post('/api/t2s/chunk', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const text = String(body.text || '').trim();
+    const lang = String(body.lang || 'th').trim() || 'th';
+    const speed = Number(body.speed || 1);
+    const effectiveSpeed = Math.min(3.0, Math.max(0.6, Number.isFinite(speed) ? speed : 1));
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text is required.' });
+    }
+    if (text.length > 4500) {
+      return res.status(413).json({ error: 'Text chunk is too large. Please split it into smaller chunks.' });
+    }
+
+    const audio = await synthesizeTextToMp3({ text, lang, speed: effectiveSpeed });
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-T2S-Speed', String(effectiveSpeed));
+    res.setHeader('Content-Length', String(audio.length));
+    res.send(audio);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/api/youtube/playlists', async (req, res) => {
