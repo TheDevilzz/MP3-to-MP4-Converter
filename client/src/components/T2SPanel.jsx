@@ -15,11 +15,18 @@ const T2S_LANGUAGES = [
   { value: 'zh-CN', label: 'Chinese (Mandarin)' },
 ];
 
+const T2S_MODELS = [
+  { value: 'gtts', label: 'gTTS' },
+  { value: 'piper', label: 'PiperTTS' },
+  { value: 'vits', label: 'VITS' },
+];
+
 const UI_COPY = {
   th: {
-    title: 'แปลงข้อความเป็นเสียง (gTTS)',
+    title: 'แปลงข้อความเป็นเสียง (gTTS / PiperTTS / VITS)',
     description: 'อัปโหลดไฟล์ .txt หรือวางข้อความ สร้างเสียงพร้อมกัน และดาวน์โหลด MP3 แยกไฟล์ได้',
     language: 'ภาษาเสียง',
+    model: 'โมเดลเสียง',
     speed: 'ความเร็ว',
     typeText: 'พิมพ์ข้อความ',
     typePlaceholder: 'วางข้อความที่นี่...',
@@ -51,9 +58,10 @@ const UI_COPY = {
     selectSave: 'เลือกว่าเซฟไฟล์ไว้ที่ไหน',
   },
   en: {
-    title: 'Text to Speech (gTTS)',
+    title: 'Text to Speech (gTTS / PiperTTS / VITS)',
     description: 'Upload .txt or paste text, generate speech in parallel, and download named MP3 files.',
     language: 'Speech language',
+    model: 'Voice model',
     speed: 'Speed',
     typeText: 'Type text',
     typePlaceholder: 'Paste text here...',
@@ -90,6 +98,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
   const uploadRef = useRef(null);
   const queueRef = useRef([]);
   const copy = UI_COPY[locale] || UI_COPY.en;
+  const [model, setModel] = useState('gtts');
   const [language, setLanguage] = useState('th');
   const [speed, setSpeed] = useState(1);
   const [typedText, setTypedText] = useState('');
@@ -196,9 +205,11 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
       return;
     }
 
+    const modelLabel = T2S_MODELS.find((candidate) => candidate.value === model)?.label || model;
+
     patchItem(itemId, {
       status: 'running',
-      message: `${copy.generating} ${Math.round(speed * 100)}%.`,
+      message: `${copy.generating} ${Math.round(speed * 100)}% (${modelLabel}).`,
       progress: 10,
       error: '',
     });
@@ -218,6 +229,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
         body: JSON.stringify({
           text: chunkText,
           lang: language,
+          model,
           speed,
         }),
       });
@@ -312,7 +324,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
           <CardDescription>{copy.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="t2s-language">{copy.language}</Label>
               <select
@@ -324,6 +336,21 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
                 {T2S_LANGUAGES.map((languageOption) => (
                   <option key={languageOption.value} value={languageOption.value}>
                     {languageOption.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="t2s-model">{copy.model}</Label>
+              <select
+                id="t2s-model"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {T2S_MODELS.map((modelOption) => (
+                  <option key={modelOption.value} value={modelOption.value}>
+                    {modelOption.label}
                   </option>
                 ))}
               </select>

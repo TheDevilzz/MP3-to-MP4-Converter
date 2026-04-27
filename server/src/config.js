@@ -29,6 +29,13 @@ export const config = {
   maxJobAgeMs: Number(process.env.MAX_JOB_AGE_MS || 1000 * 60 * 60),
   ffmpegPath: process.env.FFMPEG_PATH || bundledFfmpegPath,
   ffprobePath: process.env.FFPROBE_PATH || bundledFfprobePath,
+  piperPath: process.env.PIPER_PATH || 'piper',
+  piperModel: process.env.PIPER_MODEL || '',
+  piperModelMap: safeJsonParse(process.env.PIPER_MODEL_MAP, {}),
+  vitsPath: process.env.VITS_PATH || 'vits',
+  vitsModel: process.env.VITS_MODEL || '',
+  vitsModelMap: safeJsonParse(process.env.VITS_MODEL_MAP, {}),
+  vitsArgs: safeJsonParse(process.env.VITS_ARGS, ['--model', '{model}', '--output', '{output}']),
   videoWidth: Number(process.env.VIDEO_WIDTH || 1280),
   videoHeight: Number(process.env.VIDEO_HEIGHT || 720),
   videoCrf: Number(process.env.VIDEO_CRF || 30),
@@ -47,3 +54,13 @@ export const youtubeScopes = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
 ];
+
+function safeJsonParse(rawValue, fallback) {
+  if (!rawValue) return fallback;
+  try {
+    const parsed = JSON.parse(rawValue);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}

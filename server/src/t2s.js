@@ -1,5 +1,8 @@
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { config } from './config.js';
 
 const require = createRequire(import.meta.url);
@@ -7,10 +10,14 @@ const GTTS = require('gtts');
 
 const MAX_CHARS_PER_SEGMENT = 90;
 
-export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1 }) {
+export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1, model = 'gtts' }) {
   const normalizedText = String(text || '').trim();
   if (!normalizedText) {
     throw new Error('Text is required for T2S.');
+  }
+  const normalizedModel = String(model || 'gtts').trim().toLowerCase();
+  if (!['gtts', 'piper', 'vits'].includes(normalizedModel)) {
+    throw new Error('Unsupported T2S model. Use "gtts", "piper", or "vits".');
   }
 
   const normalizedSpeed = clamp(
@@ -18,13 +25,14 @@ export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1 }) {
     0.6,
     3.0,
   );
-  // Always generate base voice at normal speed, then remap with FFmpeg for exact speed control.
-  const tts = new GTTS(normalizedText, String(lang || 'th'), false);
-  const stream = tts.stream();
-  const baseAudio = await streamToBuffer(stream);
-  if (!baseAudio.length) {
-    throw new Error('gTTS returned empty audio. Please try again or check outbound network access to Google TTS.');
-  }
+  const normalizedLang = String(lang || 'th').trim() || 'th';
+  const baseAudio =
+    normalizedModel === 'piper'
+      ? await synthesizeWithPiper({ text: normalizedText, lang: normalizedLang })
+      : normalizedModel === 'vits'
+        ? await synthesizeWithVits({ text: normalizedText, lang: normalizedLang })
+        : await synthesizeWithGtts({ text: normalizedText, lang: normalizedLang });
+
   // Requested behavior:
   // - speed <= 1.10: return raw chunk and let client merge chunks directly.
   // - speed > 1.10: process each chunk through FFmpeg before returning.
@@ -34,7 +42,7 @@ export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1 }) {
   return await remapAudioSpeed(baseAudio, normalizedSpeed);
 }
 
-export async function synthesizeLongTextToMp3({ text, lang = 'th', speed = 1 }) {
+export async function synthesizeLongTextToMp3({ text, lang = 'th', speed = 1, model = 'gtts' }) {
   const normalizedText = String(text || '').replace(/\r/g, '').trim();
   if (!normalizedText) {
     throw new Error('Text is required for T2S.');
@@ -48,7 +56,7 @@ export async function synthesizeLongTextToMp3({ text, lang = 'th', speed = 1 }) 
   // Process each segment through the same FFmpeg speed pipeline first.
   const segmentBuffers = [];
   for (const segment of segments) {
-    const segmentAudio = await synthesizeTextToMp3({ text: segment, lang, speed });
+    const segmentAudio = await synthesizeTextToMp3({ text: segment, lang, speed, model });
     if (segmentAudio.length) {
       segmentBuffers.push(segmentAudio);
     }
@@ -61,6 +69,189 @@ export async function synthesizeLongTextToMp3({ text, lang = 'th', speed = 1 }) 
   // Merge all processed segments and normalize again as one clean MP3 stream.
   const mergedBuffer = Buffer.concat(segmentBuffers);
   return await normalizeMp3Buffer(mergedBuffer);
+}
+
+async function synthesizeWithGtts({ text, lang }) {
+  const tts = new GTTS(text, lang, false);
+  const stream = tts.stream();
+  const baseAudio = await streamToBuffer(stream);
+  if (!baseAudio.length) {
+    throw new Error('gTTS returned empty audio. Please try again or check outbound network access to Google TTS.');
+  }
+  return baseAudio;
+}
+
+async function synthesizeWithPiper({ text, lang }) {
+  const modelPath = resolvePiperModel(lang);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'piper-tts-'));
+  const wavPath = path.join(tempDir, 'speech.wav');
+
+  try {
+    await runPiperSynthesis({ text, modelPath, wavPath });
+    const wavBuffer = await fs.readFile(wavPath);
+    if (!wavBuffer.length) {
+      throw new Error('Piper returned empty audio output.');
+    }
+    return await convertWavToMp3Buffer(wavBuffer);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function synthesizeWithVits({ text, lang }) {
+  const modelPath = resolveVitsModel(lang);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vits-tts-'));
+  const wavPath = path.join(tempDir, 'speech.wav');
+
+  try {
+    await runVitsSynthesis({ text, modelPath, wavPath, lang });
+    const wavBuffer = await fs.readFile(wavPath);
+    if (!wavBuffer.length) {
+      throw new Error('VITS returned empty audio output.');
+    }
+    return await convertWavToMp3Buffer(wavBuffer);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function resolvePiperModel(lang) {
+  const langKey = String(lang || '').trim();
+  const mapped = config.piperModelMap?.[langKey];
+  const modelPath = mapped || config.piperModel;
+  if (!modelPath) {
+    throw new Error(
+      'PiperTTS model is not configured. Set PIPER_MODEL or PIPER_MODEL_MAP in server/.env.',
+    );
+  }
+  return modelPath;
+}
+
+function resolveVitsModel(lang) {
+  const langKey = String(lang || '').trim();
+  const mapped = config.vitsModelMap?.[langKey];
+  const modelPath = mapped || config.vitsModel;
+  if (!modelPath) {
+    throw new Error(
+      'VITS model is not configured. Set VITS_MODEL or VITS_MODEL_MAP in server/.env.',
+    );
+  }
+  return modelPath;
+}
+
+async function runPiperSynthesis({ text, modelPath, wavPath }) {
+  return await new Promise((resolve, reject) => {
+    const piper = spawn(
+      config.piperPath,
+      ['--model', modelPath, '--output_file', wavPath],
+      { stdio: ['pipe', 'ignore', 'pipe'] },
+    );
+
+    let stderr = '';
+    piper.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    piper.on('error', (error) => {
+      reject(
+        new Error(
+          `Could not start PiperTTS. Install piper and set PIPER_PATH correctly. Details: ${error.message}`,
+        ),
+      );
+    });
+    piper.on('close', (code) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            stderr.trim() ||
+              `PiperTTS synthesis failed with code ${code}. Check PIPER_MODEL path and voice file.`,
+          ),
+        );
+        return;
+      }
+      resolve();
+    });
+
+    piper.stdin.end(`${text}\n`);
+  });
+}
+
+async function runVitsSynthesis({ text, modelPath, wavPath, lang = '' }) {
+  const args = buildTemplatedArgs(config.vitsArgs, {
+    model: modelPath,
+    output: wavPath,
+    lang,
+  });
+
+  return await new Promise((resolve, reject) => {
+    const vits = spawn(config.vitsPath, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+
+    let stderr = '';
+    vits.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    vits.on('error', (error) => {
+      reject(
+        new Error(
+          `Could not start VITS. Install VITS runtime and set VITS_PATH correctly. Details: ${error.message}`,
+        ),
+      );
+    });
+    vits.on('close', (code) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            stderr.trim() ||
+              `VITS synthesis failed with code ${code}. Check VITS_MODEL and VITS_ARGS configuration.`,
+          ),
+        );
+        return;
+      }
+      resolve();
+    });
+
+    vits.stdin.end(`${text}\n`);
+  });
+}
+
+function buildTemplatedArgs(template, values) {
+  if (!Array.isArray(template)) return [];
+  return template.map((part) =>
+    String(part)
+      .replaceAll('{model}', values.model || '')
+      .replaceAll('{output}', values.output || '')
+      .replaceAll('{lang}', values.lang || ''),
+  );
+}
+
+async function convertWavToMp3Buffer(inputBuffer) {
+  const ffmpegArgs = [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'wav',
+    '-i',
+    'pipe:0',
+    '-map_metadata',
+    '-1',
+    '-id3v2_version',
+    '0',
+    '-write_xing',
+    '0',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    '-ar',
+    '24000',
+    '-ac',
+    '1',
+    '-f',
+    'mp3',
+    'pipe:1',
+  ];
+
+  return await runFfmpegMp3Transform(inputBuffer, ffmpegArgs);
 }
 
 function clamp(value, min, max) {

@@ -149,6 +149,7 @@ app.post('/api/t2s/chunk', async (req, res, next) => {
     const body = req.body || {};
     const text = String(body.text || '').trim();
     const lang = String(body.lang || 'th').trim() || 'th';
+    const model = String(body.model || 'gtts').trim().toLowerCase() || 'gtts';
     const speed = Number(body.speed || 1);
     const effectiveSpeed = Math.min(3.0, Math.max(0.6, Number.isFinite(speed) ? speed : 1));
 
@@ -159,7 +160,12 @@ app.post('/api/t2s/chunk', async (req, res, next) => {
       return res.status(413).json({ error: 'Text chunk is too large. Please split it into smaller chunks.' });
     }
 
-    const audio = await synthesizeLongTextToMp3({ text, lang, speed: effectiveSpeed });
+    const audio = await synthesizeLongTextToMp3({
+      text,
+      lang,
+      speed: effectiveSpeed,
+      model,
+    });
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-T2S-Speed', String(effectiveSpeed));
@@ -175,6 +181,7 @@ app.post('/api/t2s/synthesize', async (req, res, next) => {
     const body = req.body || {};
     const text = String(body.text || '').trim();
     const lang = String(body.lang || 'th').trim() || 'th';
+    const model = String(body.model || 'gtts').trim().toLowerCase() || 'gtts';
     const speed = Number(body.speed || 1);
     const effectiveSpeed = Math.min(3.0, Math.max(0.6, Number.isFinite(speed) ? speed : 1));
 
@@ -185,7 +192,12 @@ app.post('/api/t2s/synthesize', async (req, res, next) => {
       return res.status(413).json({ error: 'Text is too long. Please split into smaller files.' });
     }
 
-    const audio = await synthesizeTextToMp3({ text, lang, speed: effectiveSpeed });
+    const audio = await synthesizeTextToMp3({
+      text,
+      lang,
+      speed: effectiveSpeed,
+      model,
+    });
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-T2S-Speed', String(effectiveSpeed));

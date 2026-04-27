@@ -1271,56 +1271,53 @@ function App() {
               <CardContent className="space-y-4 text-sm">
                 <DocStep
                   number={1}
-                  title="Add Files Per Item"
-                  titleTh={locale === 'th' ? 'เพิ่มไฟล์ในแต่ละรายการ' : ''}
-                  body="Choose one MP3 and optional cover image, set destination mode, then click Add Item to Queue."
-                  bodyTh={locale === 'th' ? 'เลือก MP3 และรูปปก (ไม่บังคับ) เลือกปลายทาง แล้วกด Add Item to Queue' : ''}
+                  title={locale === 'th' ? 'เพิ่มไฟล์ในแต่ละรายการ' : 'Add Files Per Item'}
+                  body={
+                    locale === 'th'
+                      ? 'เลือก MP3 และรูปปก (ไม่บังคับ) เลือกปลายทาง แล้วกด Add Item to Queue'
+                      : 'Choose one MP3 and optional cover image, set destination mode, then click Add Item to Queue.'
+                  }
                 />
                 <DocStep
                   number={2}
-                  title="Set Unique YouTube Metadata"
-                  titleTh={locale === 'th' ? 'ตั้งค่าข้อมูล YouTube แยกรายการ' : ''}
-                  body="When mode is YouTube, set Title, Description, Privacy, Category, and optional Playlist for that specific queue item."
-                  bodyTh={
+                  title={locale === 'th' ? 'ตั้งค่าข้อมูล YouTube แยกรายการ' : 'Set Unique YouTube Metadata'}
+                  body={
                     locale === 'th'
                       ? 'ถ้าเลือกโหมด YouTube ให้กำหนด Title, Description, Privacy, Category และ Playlist (ไม่บังคับ) แยกสำหรับรายการนั้น'
-                      : ''
+                      : 'When mode is YouTube, set Title, Description, Privacy, Category, and optional Playlist for that specific queue item.'
                   }
                 />
                 <DocStep
                   number={3}
-                  title="Arrange Processing Order"
-                  titleTh={locale === 'th' ? 'จัดลำดับการประมวลผล' : ''}
-                  body="Use Up/Down controls in Queue Order. The top item runs first."
-                  bodyTh={locale === 'th' ? 'ใช้ปุ่มขึ้น/ลงใน Queue Order โดยรายการบนสุดจะรันก่อน' : ''}
+                  title={locale === 'th' ? 'จัดลำดับการประมวลผล' : 'Arrange Processing Order'}
+                  body={
+                    locale === 'th'
+                      ? 'ใช้ปุ่มขึ้น/ลงใน Queue Order โดยรายการบนสุดจะรันก่อน'
+                      : 'Use Up/Down controls in Queue Order. The top item runs first.'
+                  }
                 />
                 <DocStep
                   number={4}
-                  title="Start Queue"
-                  titleTh={locale === 'th' ? 'เริ่มคิว' : ''}
-                  body="Click Start Queue. Conversion runs in parallel, while YouTube uploads continue one-by-one."
-                  bodyTh={
+                  title={locale === 'th' ? 'เริ่มคิว' : 'Start Queue'}
+                  body={
                     locale === 'th'
                       ? 'กด Start Queue ระบบจะแปลงพร้อมกันหลายรายการ และอัปโหลด YouTube ทีละรายการตามลำดับ'
-                      : ''
+                      : 'Click Start Queue. Conversion runs in parallel, while YouTube uploads continue one-by-one.'
                   }
                 />
                 <DocStep
                   number={5}
-                  title="Review Outputs"
-                  titleTh={locale === 'th' ? 'ตรวจผลลัพธ์' : ''}
-                  body="Download-mode items show MP4 buttons. YouTube-mode items show direct video links."
-                  bodyTh={
+                  title={locale === 'th' ? 'ตรวจผลลัพธ์' : 'Review Outputs'}
+                  body={
                     locale === 'th'
                       ? 'รายการโหมด Download จะมีปุ่มดาวน์โหลด MP4 และโหมด YouTube จะมีลิงก์วิดีโอโดยตรง'
-                      : ''
+                      : 'Download-mode items show MP4 buttons. YouTube-mode items show direct video links.'
                   }
                 />
 
                 <div className="rounded-lg border border-border bg-muted/40 p-4">
                   <p className="font-semibold">{t.notes}</p>
-                  <p className="mt-2 text-muted-foreground">{t.notesEn}</p>
-                  {locale === 'th' ? <p className="mt-2 text-muted-foreground">{t.notesTh}</p> : null}
+                  <p className="mt-2 text-muted-foreground">{locale === 'th' ? t.notesTh : t.notesEn}</p>
                 </div>
               </CardContent>
             </Card>
