@@ -55,4 +55,5 @@ CLIENT_URL=https://convert.kindeeyudee.com
 SERVER_PUBLIC_URL=https://convert.kindeeyudee.com
 GOOGLE_REDIRECT_URI=https://convert.kindeeyudee.com/api/youtube/callback
 COOKIE_SECURE=true
+HOST=127.0.0.1
 ```

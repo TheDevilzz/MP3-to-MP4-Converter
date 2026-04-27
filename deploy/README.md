@@ -50,6 +50,7 @@ CLIENT_URL=https://convert.kindeeyudee.com
 SERVER_PUBLIC_URL=https://convert.kindeeyudee.com
 GOOGLE_REDIRECT_URI=https://convert.kindeeyudee.com/api/youtube/callback
 COOKIE_SECURE=true
+HOST=127.0.0.1
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
@@ -128,7 +129,7 @@ curl https://convert.kindeeyudee.com/api/health
 
 ## Security checklist
 
-- Run the app with PM2 behind Apache; do not expose port `4000` publicly.
+- Run the app with PM2 behind Apache and set `HOST=127.0.0.1`; do not expose port `4000` publicly.
 - Keep `server/.env` out of git and set permissions with `chmod 600 server/.env`.
 - Use HTTPS and set `COOKIE_SECURE=true`.
 - In Google Cloud Console, keep only the production redirect URI needed for this domain.

@@ -338,8 +338,8 @@ setInterval(() => {
   sweepStaleJobs().catch(() => {});
 }, 1000 * 60 * 10).unref();
 
-app.listen(config.port, () => {
-  console.log(`Server listening on ${config.serverPublicUrl}`);
+app.listen(config.port, config.host, () => {
+  console.log(`Server listening on ${config.serverPublicUrl} (${config.host}:${config.port})`);
 });
 
 async function processJob(id) {

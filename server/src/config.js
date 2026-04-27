@@ -17,6 +17,7 @@ const bundledFfprobePath = ffprobeStatic?.path || 'ffprobe';
 
 export const config = {
   port: defaultPort,
+  host: process.env.HOST || '0.0.0.0',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   serverPublicUrl,
   clientDistDir:
