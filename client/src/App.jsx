@@ -37,6 +37,22 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
 const CLIENT_YOUTUBE_CHUNK_BYTES = 8 * 1024 * 1024;
+const YOUTUBE_CATEGORIES = [
+  { id: '1', label: 'Film & Animation' },
+  { id: '2', label: 'Autos & Vehicles' },
+  { id: '10', label: 'Music' },
+  { id: '15', label: 'Pets & Animals' },
+  { id: '17', label: 'Sports' },
+  { id: '19', label: 'Travel & Events' },
+  { id: '20', label: 'Gaming' },
+  { id: '22', label: 'People & Blogs' },
+  { id: '23', label: 'Comedy' },
+  { id: '24', label: 'Entertainment' },
+  { id: '25', label: 'News & Politics' },
+  { id: '26', label: 'Howto & Style' },
+  { id: '27', label: 'Education' },
+  { id: '28', label: 'Science & Technology' },
+];
 
 function App() {
   const eventSourceRef = useRef(null);
@@ -55,6 +71,9 @@ function App() {
   const [editorTitle, setEditorTitle] = useState('Converted MP3 Video');
   const [editorDescription, setEditorDescription] = useState('');
   const [editorPrivacyStatus, setEditorPrivacyStatus] = useState('private');
+  const [editorCategoryId, setEditorCategoryId] = useState('22');
+  const [editorScheduleEnabled, setEditorScheduleEnabled] = useState(false);
+  const [editorScheduledAt, setEditorScheduledAt] = useState('');
 
   const [queueItems, setQueueItems] = useState([]);
   const [activeItemId, setActiveItemId] = useState('');
@@ -184,6 +203,10 @@ function App() {
       setError('Please set a YouTube title for this queue item.');
       return;
     }
+    if (editorMode === 'youtube' && editorScheduleEnabled && !editorScheduledAt) {
+      setError('Please choose a publish date/time when scheduling is enabled.');
+      return;
+    }
 
     const selectedCover = editorImageFile || (useSharedCover ? sharedCoverFile : null);
     const itemId = crypto.randomUUID();
@@ -199,6 +222,9 @@ function App() {
       title: editorTitle.trim() || 'Converted MP3 Video',
       description: editorDescription.trim(),
       privacyStatus: editorPrivacyStatus,
+      categoryId: editorCategoryId,
+      scheduleEnabled: editorScheduleEnabled,
+      scheduledAt: editorScheduleEnabled ? toIsoDateTime(editorScheduledAt) : null,
       status: 'queued',
       stage: 'queued',
       progress: 0,
@@ -220,6 +246,9 @@ function App() {
     setEditorImageFile(null);
     setEditorDescription('');
     setEditorTitle('Converted MP3 Video');
+    setEditorCategoryId('22');
+    setEditorScheduleEnabled(false);
+    setEditorScheduledAt('');
     setNotice('Queue item added.');
   }
 
@@ -451,6 +480,9 @@ function App() {
       title: itemMeta.title,
       description: itemMeta.description,
       privacyStatus: itemMeta.privacyStatus,
+      categoryId: itemMeta.categoryId,
+      scheduleEnabled: itemMeta.scheduleEnabled,
+      scheduledAt: itemMeta.scheduledAt,
     });
 
     let uploadedBytes = 0;
@@ -730,7 +762,7 @@ function App() {
                           )}
                         </div>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor="item-title">Title</Label>
                             <Input
@@ -753,6 +785,49 @@ function App() {
                               <option value="public">Public</option>
                             </select>
                           </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="item-category">Category</Label>
+                            <select
+                              id="item-category"
+                              value={editorCategoryId}
+                              onChange={(event) => setEditorCategoryId(event.target.value)}
+                              className="flex h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {YOUTUBE_CATEGORIES.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-border bg-muted/40 p-4">
+                          <label className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              className="mt-1 size-4 accent-[hsl(var(--primary))]"
+                              checked={editorScheduleEnabled}
+                              onChange={(event) => setEditorScheduleEnabled(event.target.checked)}
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              Schedule publish on YouTube
+                            </span>
+                          </label>
+                          {editorScheduleEnabled && (
+                            <div className="mt-3 space-y-2">
+                              <Label htmlFor="item-scheduled-at">Publish at</Label>
+                              <Input
+                                id="item-scheduled-at"
+                                type="datetime-local"
+                                value={editorScheduledAt}
+                                onChange={(event) => setEditorScheduledAt(event.target.value)}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Scheduled uploads are sent as private and become public at your chosen time.
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="space-y-2">
@@ -1307,6 +1382,13 @@ function formatDuration(seconds) {
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
   return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
+function toIsoDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 async function postJson(pathname, body) {

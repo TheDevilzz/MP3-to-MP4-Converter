@@ -99,6 +99,8 @@ export async function uploadVideoToYoutube({
   title,
   description,
   privacyStatus,
+  categoryId,
+  publishAt,
   onProgress,
 }) {
   const oauth = createOAuthClient();
@@ -113,6 +115,9 @@ export async function uploadVideoToYoutube({
   const safePrivacy = ['private', 'unlisted', 'public'].includes(privacyStatus)
     ? privacyStatus
     : 'private';
+  const safeCategoryId = /^\d+$/.test(String(categoryId || '')) ? String(categoryId) : '22';
+  const safePublishAt = normalizePublishAt(publishAt);
+  const finalPrivacy = safePublishAt ? 'private' : safePrivacy;
 
   let lastProgress = 0;
   const response = await youtube.videos.insert(
@@ -123,10 +128,12 @@ export async function uploadVideoToYoutube({
         snippet: {
           title: title || 'Converted MP3 Video',
           description: description || '',
+          categoryId: safeCategoryId,
         },
         status: {
-          privacyStatus: safePrivacy,
+          privacyStatus: finalPrivacy,
           selfDeclaredMadeForKids: false,
+          ...(safePublishAt ? { publishAt: safePublishAt } : {}),
         },
       },
       media: {
@@ -153,6 +160,13 @@ export async function uploadVideoToYoutube({
     videoId,
     url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
   };
+}
+
+function normalizePublishAt(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 async function getSelectedYoutubeChannel(auth) {

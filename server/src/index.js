@@ -170,6 +170,8 @@ app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
       title: String(body.title || 'Converted MP3 Video').trim(),
       description: String(body.description || '').trim(),
       privacyStatus: String(body.privacyStatus || 'private'),
+      categoryId: normalizeCategoryId(body.categoryId),
+      publishAt: normalizePublishAt(body.scheduleEnabled, body.scheduledAt),
       fileName: String(body.fileName || 'converted-mp3-video.mp4'),
       fileSize,
       receivedBytes: 0,
@@ -262,6 +264,8 @@ app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', async (req, res,
       title: metadata.title,
       description: metadata.description,
       privacyStatus: metadata.privacyStatus,
+      categoryId: metadata.categoryId,
+      publishAt: metadata.publishAt,
       youtubeSessionId: metadata.youtubeSessionId,
       downloadUrl: null,
       youtubeUrl: null,
@@ -305,6 +309,8 @@ app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, ne
     const title = String(body.title || 'Converted MP3 Video').trim();
     const description = String(body.description || '').trim();
     const privacyStatus = String(body.privacyStatus || 'private');
+    const categoryId = normalizeCategoryId(body.categoryId);
+    const publishAt = normalizePublishAt(body.scheduleEnabled, body.scheduledAt);
 
     if (!video) {
       await cleanupUploadDir(req.uploadDir);
@@ -325,6 +331,8 @@ app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, ne
       title,
       description,
       privacyStatus,
+      categoryId,
+      publishAt,
       youtubeSessionId: session.id,
       downloadUrl: null,
       youtubeUrl: null,
@@ -369,6 +377,8 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
     const title = String(body.title || 'Converted MP3 Video').trim();
     const description = String(body.description || '').trim();
     const privacyStatus = String(body.privacyStatus || 'private');
+    const categoryId = normalizeCategoryId(body.categoryId);
+    const publishAt = normalizePublishAt(body.scheduleEnabled, body.scheduledAt);
 
     if (!audio || !image) {
       await cleanupUploadDir(req.uploadDir);
@@ -395,6 +405,8 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
       title,
       description,
       privacyStatus,
+      categoryId,
+      publishAt,
       youtubeSessionId,
       downloadUrl: null,
       youtubeUrl: null,
@@ -560,6 +572,8 @@ async function processJob(id) {
       title: job.title,
       description: job.description,
       privacyStatus: job.privacyStatus,
+      categoryId: job.categoryId,
+      publishAt: job.publishAt,
       onProgress: (percent) => {
         patchJob(id, {
           stage: 'uploading',
@@ -614,6 +628,8 @@ async function processClientYoutubeJob(id) {
     title: job.title,
     description: job.description,
     privacyStatus: job.privacyStatus,
+    categoryId: job.categoryId,
+    publishAt: job.publishAt,
     onProgress: (percent) => {
       patchJob(id, {
         stage: 'uploading',
@@ -689,6 +705,18 @@ function parseContentRange(value) {
     end: Number(match[2]),
     total: Number(match[3]),
   };
+}
+
+function normalizeCategoryId(value) {
+  const stringValue = String(value || '').trim();
+  return /^\d+$/.test(stringValue) ? stringValue : '22';
+}
+
+function normalizePublishAt(scheduleEnabled, scheduledAt) {
+  if (!(scheduleEnabled === true || scheduleEnabled === 'true')) return null;
+  const date = new Date(scheduledAt || '');
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 async function cleanupUploadDir(dir) {
