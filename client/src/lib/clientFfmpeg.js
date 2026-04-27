@@ -16,8 +16,8 @@ let currentProgressHandler = null;
 let coreAssetPromise;
 
 export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onProgress }) {
-  if (!audioFile || !imageFile) {
-    throw new Error('Missing MP3 or cover image.');
+  if (!audioFile) {
+    throw new Error('Missing MP3 file.');
   }
 
   const engine = await loadFfmpeg((percent) => {
@@ -26,7 +26,8 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
   });
 
   const audioName = `input-audio.${extensionFor(audioFile, 'mp3')}`;
-  const imageName = `input-cover.${extensionFor(imageFile, 'png')}`;
+  const hasImage = Boolean(imageFile);
+  const imageName = hasImage ? `input-cover.${extensionFor(imageFile, 'png')}` : '';
   const outputName = 'output.mp4';
 
   try {
@@ -34,36 +35,59 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
     onProgress?.(10);
 
     await engine.writeFile(audioName, await fetchFile(audioFile));
-    await engine.writeFile(imageName, await fetchFile(imageFile));
+    if (hasImage) {
+      await engine.writeFile(imageName, await fetchFile(imageFile));
+    }
 
     const coverWidth = Math.round(VIDEO_WIDTH * 0.72);
     const coverHeight = Math.round(VIDEO_HEIGHT * 0.76);
-    const filter = [
-      `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},boxblur=18:1,eq=brightness=-0.08:saturation=0.85[bg]`,
-      `[0:v]scale=${coverWidth}:${coverHeight}:force_original_aspect_ratio=decrease,format=rgba[cover]`,
-      `[bg][cover]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`,
-    ].join(';');
+    const filter = hasImage
+      ? [
+          `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},boxblur=18:1,eq=brightness=-0.08:saturation=0.85[bg]`,
+          `[0:v]scale=${coverWidth}:${coverHeight}:force_original_aspect_ratio=decrease,format=rgba[cover]`,
+          `[bg][cover]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`,
+        ].join(';')
+      : '[0:v]format=yuv420p[v]';
 
     currentProgressHandler = (progress) => {
       onStage?.('converting');
       onProgress?.(Math.max(0, Math.min(99, Math.round(progress * 100))));
     };
 
+    const args = hasImage
+      ? [
+          '-loop',
+          '1',
+          '-framerate',
+          '2',
+          '-i',
+          imageName,
+          '-i',
+          audioName,
+          '-filter_complex',
+          filter,
+          '-map',
+          '[v]',
+          '-map',
+          '1:a:0',
+        ]
+      : [
+          '-f',
+          'lavfi',
+          '-i',
+          `color=c=0x0f172a:s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=2`,
+          '-i',
+          audioName,
+          '-filter_complex',
+          filter,
+          '-map',
+          '[v]',
+          '-map',
+          '1:a:0',
+        ];
+
     const exitCode = await engine.exec([
-      '-loop',
-      '1',
-      '-framerate',
-      '2',
-      '-i',
-      imageName,
-      '-i',
-      audioName,
-      '-filter_complex',
-      filter,
-      '-map',
-      '[v]',
-      '-map',
-      '1:a:0',
+      ...args,
       '-c:v',
       'libx264',
       '-preset',
@@ -98,7 +122,9 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
   } finally {
     currentProgressHandler = null;
     await cleanupVirtualFile(engine, audioName);
-    await cleanupVirtualFile(engine, imageName);
+    if (hasImage) {
+      await cleanupVirtualFile(engine, imageName);
+    }
     await cleanupVirtualFile(engine, outputName);
   }
 }

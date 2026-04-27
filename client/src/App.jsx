@@ -49,6 +49,8 @@ function App() {
 
   const [editorMp3File, setEditorMp3File] = useState(null);
   const [editorImageFile, setEditorImageFile] = useState(null);
+  const [sharedCoverFile, setSharedCoverFile] = useState(null);
+  const [useSharedCover, setUseSharedCover] = useState(true);
   const [editorMode, setEditorMode] = useState('download');
   const [editorTitle, setEditorTitle] = useState('Converted MP3 Video');
   const [editorDescription, setEditorDescription] = useState('');
@@ -79,6 +81,10 @@ function App() {
     if (!editorImageFile) return null;
     return URL.createObjectURL(editorImageFile);
   }, [editorImageFile]);
+  const sharedCoverPreviewUrl = useMemo(() => {
+    if (!sharedCoverFile) return null;
+    return URL.createObjectURL(sharedCoverFile);
+  }, [sharedCoverFile]);
 
   useEffect(() => {
     queueRef.current = queueItems;
@@ -94,6 +100,12 @@ function App() {
       if (editorImagePreviewUrl) URL.revokeObjectURL(editorImagePreviewUrl);
     };
   }, [editorImagePreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (sharedCoverPreviewUrl) URL.revokeObjectURL(sharedCoverPreviewUrl);
+    };
+  }, [sharedCoverPreviewUrl]);
 
   useEffect(() => {
     let active = true;
@@ -164,8 +176,8 @@ function App() {
     setError('');
     setNotice('');
 
-    if (!editorMp3File || !editorImageFile) {
-      setError('Please add both MP3 and cover image before adding to queue.');
+    if (!editorMp3File) {
+      setError('Please add an MP3 before adding to queue.');
       return;
     }
     if (editorMode === 'youtube' && !editorTitle.trim()) {
@@ -173,14 +185,15 @@ function App() {
       return;
     }
 
+    const selectedCover = editorImageFile || (useSharedCover ? sharedCoverFile : null);
     const itemId = crypto.randomUUID();
-    const imagePreviewUrl = URL.createObjectURL(editorImageFile);
+    const imagePreviewUrl = selectedCover ? URL.createObjectURL(selectedCover) : '';
 
     const newItem = {
       id: itemId,
       createdAt: Date.now(),
       mp3File: editorMp3File,
-      imageFile: editorImageFile,
+      imageFile: selectedCover,
       imagePreviewUrl,
       mode: editorMode,
       title: editorTitle.trim() || 'Converted MP3 Video',
@@ -253,17 +266,42 @@ function App() {
       setError('Please add at least one queue item first.');
       return;
     }
+    if (queueRef.current.some((item) => item.mode === 'youtube') && !youtube.connected) {
+      setError('Connect YouTube before running queue items set to YouTube mode.');
+      return;
+    }
 
     setError('');
     setNotice('');
     setIsQueueRunning(true);
 
     try {
-      while (true) {
-        const next = queueRef.current.find((item) => item.status === 'queued');
-        if (!next) break;
-        await processQueueItem(next.id);
+      const queuedIds = queueRef.current
+        .filter((item) => item.status === 'queued')
+        .map((item) => item.id);
+      if (!queuedIds.length) {
+        setNotice('No queued items to process.');
+        return;
       }
+
+      await Promise.all(queuedIds.map((id) => processQueueConversion(id)));
+
+      for (const id of queuedIds) {
+        const current = queueRef.current.find((item) => item.id === id);
+        if (!current || current.mode !== 'youtube') continue;
+        if (current.status === 'error') continue;
+        try {
+          await uploadConvertedQueueItem(id);
+        } catch (uploadError) {
+          updateQueueItem(id, {
+            status: 'error',
+            stage: 'error',
+            message: 'YouTube upload failed.',
+            error: getErrorMessage(uploadError, 'YouTube upload failed.'),
+          });
+        }
+      }
+
       setNotice('Queue finished.');
     } finally {
       setIsQueueRunning(false);
@@ -271,7 +309,7 @@ function App() {
     }
   }
 
-  async function processQueueItem(itemId) {
+  async function processQueueConversion(itemId) {
     const item = queueRef.current.find((candidate) => candidate.id === itemId);
     if (!item) return;
 
@@ -363,21 +401,17 @@ function App() {
         return;
       }
 
-      if (!youtube.connected) {
-        throw new Error('Connect YouTube before processing YouTube queue items.');
-      }
-
       updateQueueItem(itemId, {
-        stage: 'transferring',
+        status: 'converted',
+        stage: 'converted',
         transferProgress: 0,
         convertProgress: 100,
         progress: 72,
-        message: 'Sending converted MP4 to upload service.',
+        message: 'Converted. Waiting for upload slot.',
         etaText: '',
+        convertedBlob: mp4Blob,
+        outputBytes: mp4Blob.size,
       });
-
-      const jobId = await sendClientMp4ToYoutube(mp4Blob, itemId, item);
-      await subscribeToYoutubeJob(jobId, itemId);
     } catch (itemError) {
       updateQueueItem(itemId, {
         status: 'error',
@@ -390,6 +424,24 @@ function App() {
       delete phaseRef.current[itemId];
       delete conversionStartedAtRef.current[itemId];
     }
+  }
+
+  async function uploadConvertedQueueItem(itemId) {
+    const item = queueRef.current.find((candidate) => candidate.id === itemId);
+    if (!item || !item.convertedBlob) return;
+
+    setActiveItemId(itemId);
+    updateQueueItem(itemId, {
+      status: 'running',
+      stage: 'transferring',
+      transferProgress: 0,
+      progress: 72,
+      message: 'Sending converted MP4 to upload service.',
+    });
+
+    const jobId = await sendClientMp4ToYoutube(item.convertedBlob, itemId, item);
+    updateQueueItem(itemId, { convertedBlob: null });
+    await subscribeToYoutubeJob(jobId, itemId);
   }
 
   async function sendClientMp4ToYoutube(mp4Blob, itemId, itemMeta) {
@@ -500,7 +552,7 @@ function App() {
     setView('studio');
   }
 
-  const canAddItem = Boolean(editorMp3File && editorImageFile) && !isQueueRunning;
+  const canAddItem = Boolean(editorMp3File) && !isQueueRunning;
   const canStartQueue = queueItems.some((item) => item.status === 'queued') && !isQueueRunning;
   const visibleError = error || formatJobError(activeItem?.error);
 
@@ -567,9 +619,39 @@ function App() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Add Queue Item</CardTitle>
-                    <CardDescription>Each item can use its own mode and YouTube title.</CardDescription>
+                    <CardDescription>
+                      Convert all items in parallel. YouTube uploads run one-by-one in queue order.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                      <p className="text-sm font-semibold">Shared cover (optional)</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Use one cover for every queue item, or leave empty to generate a plain background.
+                      </p>
+                      <div className="mt-3 grid gap-4 md:grid-cols-2">
+                        <FileDrop
+                          accept="image/png,image/jpeg,image/webp"
+                          file={sharedCoverFile}
+                          icon={Image}
+                          label="Shared cover"
+                          previewUrl={sharedCoverPreviewUrl}
+                          onChange={setSharedCoverFile}
+                        />
+                        <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+                          <input
+                            type="checkbox"
+                            className="mt-1 size-4 accent-[hsl(var(--primary))]"
+                            checked={useSharedCover}
+                            onChange={(event) => setUseSharedCover(event.target.checked)}
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            Apply shared cover to all queue items when an item-specific cover is not selected.
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
                     <div className="grid gap-4 md:grid-cols-2">
                       <FileDrop
                         accept="audio/mpeg,audio/mp3"
@@ -582,7 +664,7 @@ function App() {
                         accept="image/png,image/jpeg,image/webp"
                         file={editorImageFile}
                         icon={Image}
-                        label="Cover image"
+                        label="Cover image (optional)"
                         previewUrl={editorImagePreviewUrl}
                         onChange={setEditorImageFile}
                       />
@@ -857,8 +939,8 @@ function App() {
                   number={1}
                   title="Add Files Per Item"
                   titleTh="เพิ่มไฟล์ในแต่ละรายการ"
-                  body="Choose one MP3 + one cover image, set destination mode, and click Add Item to Queue."
-                  bodyTh="เลือก MP3 1 ไฟล์ + รูปปก 1 รูป เลือกปลายทาง แล้วกด Add Item to Queue"
+                  body="Choose one MP3 and optional cover image, set destination mode, then click Add Item to Queue."
+                  bodyTh="เลือก MP3 และรูปปก (ไม่บังคับ) เลือกปลายทาง แล้วกด Add Item to Queue"
                 />
                 <DocStep
                   number={2}
@@ -878,8 +960,8 @@ function App() {
                   number={4}
                   title="Start Queue"
                   titleTh="เริ่มคิว"
-                  body="Click Start Queue. The app converts item-by-item and keeps each result link."
-                  bodyTh="กด Start Queue ระบบจะประมวลผลทีละรายการและเก็บลิงก์ผลลัพธ์แต่ละรายการไว้"
+                  body="Click Start Queue. Conversion runs in parallel, while YouTube uploads continue one-by-one."
+                  bodyTh="กด Start Queue ระบบจะแปลงพร้อมกันหลายรายการ และอัปโหลด YouTube ทีละรายการตามลำดับ"
                 />
                 <DocStep
                   number={5}
@@ -1024,7 +1106,7 @@ function QueueItemRow({
             {index + 1}. {item.title}
           </p>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {item.mp3File?.name || 'MP3'} / {item.imageFile?.name || 'Image'}
+            {item.mp3File?.name || 'MP3'} / {item.imageFile?.name || 'No cover'}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
             {item.mode === 'youtube' ? 'YouTube upload' : 'Device download'} / {item.message}
