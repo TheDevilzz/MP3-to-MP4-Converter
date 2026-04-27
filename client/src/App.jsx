@@ -928,20 +928,20 @@ function App() {
                   <DonateMethod
                     title="PromptPay"
                     value="0956790178"
-                    hint="Name: KindeeYudee"
+                    hint="Name: วีระพล ขอร้อง"
                   />
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <DonateMethod
                     title="PayPal"
-                    value="https://paypal.me/yourname"
+                    value="https://paypal.me/50wallet"
                     hint="Optional additional channel."
                   />
                   <DonateMethod
-                    title="Buy Me a Coffee"
-                    value="https://buymeacoffee.com/yourname"
-                    hint="Optional creator page."
+                    title="Tipme"
+                    value="https://tipme.in.th/9ab9153140370a5811370460"
+                    hint="Thai tipping channel."
                   />
                 </div>
               </CardContent>
