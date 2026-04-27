@@ -32,6 +32,8 @@ export const config = {
   piperPath: process.env.PIPER_PATH || 'piper',
   piperModel: process.env.PIPER_MODEL || '',
   piperModelMap: safeJsonParse(process.env.PIPER_MODEL_MAP, {}),
+  piperEspeakData: process.env.PIPER_ESPEAK_DATA || '',
+  piperLibraryPath: process.env.PIPER_LIBRARY_PATH || '',
   vitsPath: process.env.VITS_PATH || 'vits',
   vitsModel: process.env.VITS_MODEL || '',
   vitsModelMap: safeJsonParse(process.env.VITS_MODEL_MAP, {}),

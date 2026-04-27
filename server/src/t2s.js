@@ -142,11 +142,25 @@ function resolveVitsModel(lang) {
 }
 
 async function runPiperSynthesis({ text, modelPath, wavPath }) {
+  const args = ['--model', modelPath, '--output_file', wavPath];
+  if (config.piperEspeakData) {
+    args.push('--espeak_data', config.piperEspeakData);
+  }
+  const mergedLibraryPath = [config.piperLibraryPath, process.env.LD_LIBRARY_PATH]
+    .filter(Boolean)
+    .join(':');
+
   return await new Promise((resolve, reject) => {
     const piper = spawn(
       config.piperPath,
-      ['--model', modelPath, '--output_file', wavPath],
-      { stdio: ['pipe', 'ignore', 'pipe'] },
+      args,
+      {
+        stdio: ['pipe', 'ignore', 'pipe'],
+        env: {
+          ...process.env,
+          ...(mergedLibraryPath ? { LD_LIBRARY_PATH: mergedLibraryPath } : {}),
+        },
+      },
     );
 
     let stderr = '';
