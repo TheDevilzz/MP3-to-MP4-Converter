@@ -46,6 +46,7 @@ function App() {
   const eventSourceRef = useRef(null);
   const downloadHrefRef = useRef('');
   const conversionStartedAtRef = useRef(null);
+  const conversionPhaseRef = useRef('idle');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const [mp3File, setMp3File] = useState(null);
@@ -183,6 +184,7 @@ function App() {
     setIsSubmitting(true);
     setClientUploadProgress(0);
     conversionStartedAtRef.current = null;
+    conversionPhaseRef.current = 'loading';
     setJob({
       ...initialJob,
       status: 'running',
@@ -195,6 +197,7 @@ function App() {
         audioFile: mp3File,
         imageFile,
         onStage: (stage) => {
+          conversionPhaseRef.current = stage;
           if (stage === 'loading') {
             setJob((current) => ({
               ...current,
@@ -210,21 +213,33 @@ function App() {
               message: 'Preparing files in browser memory.',
             }));
           }
+          if (stage === 'converting') {
+            if (!conversionStartedAtRef.current) {
+              conversionStartedAtRef.current = Date.now();
+            }
+            setJob((current) => ({
+              ...current,
+              stage: 'converting',
+              convertProgress: current.stage === 'converting' ? current.convertProgress : 0,
+              message: current.stage === 'converting' ? current.message : 'Converting in browser 0%',
+            }));
+          }
         },
         onProgress: (percent) => {
-          const etaText = getConversionEtaText(percent, conversionStartedAtRef);
-          setClientUploadProgress(percent >= 12 ? 100 : Math.round(percent * 8));
+          const isConverting = conversionPhaseRef.current === 'converting';
+          const etaText = isConverting ? getConversionEtaText(percent, conversionStartedAtRef) : '';
+          setClientUploadProgress(isConverting ? 100 : Math.min(95, Math.round(percent * 9.5)));
           setJob((current) => ({
             ...current,
             status: 'running',
-            stage: percent >= 12 ? 'converting' : current.stage,
-            convertProgress: percent >= 12 ? percent : 0,
-            progress: mode === 'youtube'
-              ? Math.min(72, Math.round(percent * 0.72))
-              : percent,
-            message: percent >= 12
+            stage: isConverting ? 'converting' : current.stage,
+            convertProgress: isConverting ? percent : 0,
+            progress: isConverting
+              ? (mode === 'youtube' ? Math.min(72, Math.round(percent * 0.72)) : percent)
+              : 0,
+            message: isConverting
               ? `Converting in browser ${percent}%${etaText ? ` - ${etaText}` : ''}`
-              : 'Loading browser FFmpeg engine.',
+              : current.message,
             etaText,
           }));
         },
@@ -349,6 +364,8 @@ function App() {
   function resetWorkbench() {
     eventSourceRef.current?.close();
     clearDownloadHref();
+    conversionPhaseRef.current = 'idle';
+    conversionStartedAtRef.current = null;
     setJob(initialJob);
     setClientUploadProgress(0);
     setError('');

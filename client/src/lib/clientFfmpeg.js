@@ -31,7 +31,7 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
 
   try {
     onStage?.('preparing');
-    onProgress?.(12);
+    onProgress?.(10);
 
     await engine.writeFile(audioName, await fetchFile(audioFile));
     await engine.writeFile(imageName, await fetchFile(imageFile));
@@ -46,7 +46,7 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
 
     currentProgressHandler = (progress) => {
       onStage?.('converting');
-      onProgress?.(Math.max(12, Math.min(99, Math.round(progress * 100))));
+      onProgress?.(Math.max(0, Math.min(99, Math.round(progress * 100))));
     };
 
     const exitCode = await engine.exec([
