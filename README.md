@@ -1,155 +1,231 @@
-ทดลองใช้งานได้ที่ https://convert.kindeeyudee.com/
+# MP3 to MP4 Studio + T2S (TH/EN)
 
-# MP3 to MP4 Studio
+Live / ทดลองใช้งาน: [https://convert.kindeeyudee.com/](https://convert.kindeeyudee.com/)
 
-Full-stack React (Vite) + Express app สำหรับแปลง MP3 + cover image เป็น MP4 ใน browser ด้วย FFmpeg WebAssembly, ดาวน์โหลดไฟล์ หรือส่ง MP4 ที่แปลงเสร็จแล้วให้ backend อัปโหลดขึ้น YouTube ผ่าน Google OAuth2 + YouTube Data API v3
+Full-stack app with React (Vite) + Express for:
+- MP3 + cover image to MP4
+- YouTube upload queue
+- Text-to-Speech (gTTS)
 
-## ฟีเจอร์หลัก
+แอป Full-stack React (Vite) + Express สำหรับ:
+- แปลง MP3 + รูปปก เป็น MP4
+- คิวอัปโหลด YouTube
+- แปลงข้อความเป็นเสียง (gTTS)
 
-- Frontend: React, Vite, Tailwind CSS, shadcn-style UI primitives, dark mode
-- Browser conversion: FFmpeg WebAssembly แปลง MP3 + image เป็น H.264/AAC MP4 ในเครื่องผู้ใช้
-- Backend: Express, Multer temp upload สำหรับ MP4 ที่แปลงแล้ว, SSE realtime YouTube upload progress
-- YouTube: OAuth2 connect flow และ `videos.insert` upload
-- Cleanup: download mode ไม่อัปโหลดไฟล์ขึ้น server; YouTube mode ลบ MP4 ชั่วคราวหลัง upload สำเร็จ, error หรือหมดอายุ
-- Podman: มี `Containerfile` และ `podman-compose.yml`
+---
 
-## โครงสร้างโปรเจกต์
+## Features / ฟีเจอร์
+
+## MP3 to MP4 Studio
+- Modern dark UI (Tailwind + shadcn-style components)  
+  UI โทนมืดสมัยใหม่ (Tailwind + shadcn-style)
+- Drag/drop file input  
+  รองรับลากวางไฟล์
+- Browser conversion with FFmpeg WASM  
+  แปลงบนเบราว์เซอร์ด้วย FFmpeg WASM
+- Download mode (no permanent media storage on server)  
+  โหมดดาวน์โหลด (ไม่เก็บไฟล์ถาวรบนเซิร์ฟเวอร์)
+- YouTube mode:
+  - OAuth connect / เชื่อมต่อ OAuth
+  - Title, description, privacy / ตั้งค่า title, description, privacy
+  - Category / หมวดหมู่
+  - Schedule publish / ตั้งเวลาเผยแพร่
+  - Optional playlist / เลือกเพลย์ลิสต์ (ไม่บังคับ)
+
+Queue behavior / พฤติกรรมคิว:
+- Conversion runs in parallel / แปลงหลายรายการพร้อมกัน
+- YouTube uploads run one-by-one in queue order / อัปโหลด YouTube ทีละรายการตามลำดับคิว
+
+## T2S (Text-to-Speech)
+- Uses `gtts` (Google Translate TTS style voice)  
+  ใช้ `gtts` (เสียงแนว Google Translate TTS)
+- Input:
+  - Type/paste text / พิมพ์หรือวางข้อความ
+  - Upload many `.txt` files / อัปโหลด `.txt` ได้หลายไฟล์
+- Per-item output filename / ตั้งชื่อไฟล์ output ต่อรายการ
+- Speed slider up to `3.0x` / ปรับความเร็วสูงสุด `3.0x`
+- Queue processing in client / ประมวลผลคิวฝั่ง client
+- Server returns chunk audio in memory (no permanent storage)  
+  เซิร์ฟเวอร์ส่งเสียงเป็น chunk ในหน่วยความจำ (ไม่เก็บถาวร)
+
+Current speed logic / logic ความเร็วปัจจุบัน:
+- `speed <= 1.10` -> return raw segment mp3  
+  `speed <= 1.10` -> ส่ง mp3 ย่อยตรงๆ
+- `speed > 1.10` -> process each segment with FFmpeg `atempo`  
+  `speed > 1.10` -> เข้า FFmpeg `atempo` ต่อก้อน
+
+---
+
+## Tech Stack
+
+- Frontend: React 19, Vite, Tailwind CSS
+- Backend: Express 5
+- Media:
+  - Browser conversion: `@ffmpeg/ffmpeg`
+  - Server conversion: `ffmpeg-static`, `ffprobe-static`
+- YouTube: `googleapis`
+- T2S: `gtts`
+
+---
+
+## Project Structure / โครงสร้างโปรเจกต์
 
 ```text
-client/                 React Vite frontend
-server/                 Express backend
-client/src/lib/clientFfmpeg.js Browser FFmpeg conversion
-server/src/ffmpeg.js    Server-side fallback conversion + progress parser
-server/src/youtube.js   Google OAuth2 + YouTube upload
-Containerfile           Podman image build
-podman-compose.yml      Podman Compose service
-.env.example            Environment template
+client/
+  src/
+    App.jsx
+    components/
+      T2SPanel.jsx
+    lib/
+      clientFfmpeg.js
+
+server/
+  src/
+    index.js
+    ffmpeg.js
+    youtube.js
+    t2s.js
+    jobs.js
+
+deploy/
+  README.md
+  PRODUCTION_NOTES.md
+  apache/
 ```
 
-## ติดตั้งแบบ Development
+---
 
-ต้องมี Node.js และ npm ในเครื่องก่อน
+## Local Development / การรันในเครื่อง
+
+Requirements / สิ่งที่ต้องมี:
+- Node.js 20+
+- npm
+
+Install & run:
 
 ```powershell
-Copy-Item .env.example .env
 npm.cmd install
 npm.cmd run install:all
 npm.cmd run dev
 ```
 
-เปิดเว็บที่ `http://localhost:5173` และ backend จะอยู่ที่ `http://localhost:4000`
+Default URLs:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:4000`
 
-ระบบจะ copy FFmpeg WASM assets จาก `node_modules/@ffmpeg/core` ไปที่ `client/public/ffmpeg` อัตโนมัติก่อน `dev` และ `build`
+---
 
-ถ้าต้องการตรวจ FFmpeg ฝั่ง backend fallback:
+## Environment Variables / ตัวแปรแวดล้อม
 
-```powershell
-ffmpeg -version
-ffprobe -version
-```
-
-ถ้าต้องการติดตั้ง FFmpeg ลง Windows โดยตรงสำหรับ server-side fallback:
-
-```powershell
-winget install Gyan.FFmpeg
-```
-
-## ตั้งค่า Google OAuth และ YouTube
-
-1. ไปที่ Google Cloud Console
-2. สร้าง Project หรือเลือก Project เดิม
-3. Enable `YouTube Data API v3`
-4. สร้าง OAuth Client ID ชนิด `Web application`
-5. เพิ่ม Authorized redirect URI:
-
-```text
-http://localhost:4000/api/youtube/callback
-```
-
-6. ใส่ค่าใน `.env`
+Create `server/.env` and set values:
 
 ```env
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:4000/api/youtube/callback
-```
-
-ถ้า OAuth app ยังอยู่ใน Testing ให้เพิ่มอีเมลของคุณเป็น Test user ก่อนใช้งานปุ่ม Connect YouTube
-
-## วิธีทำไฟล์ Podman และติดตั้ง
-
-โปรเจกต์นี้เตรียมไฟล์ไว้แล้ว:
-
-- `Containerfile`: build frontend, install backend production deps, install FFmpeg ใน runtime image
-- `podman-compose.yml`: เปิด service ที่ port `4000` และโหลด env จาก `.env`
-- `.containerignore`: ตัด `node_modules`, build output และไฟล์ไม่จำเป็นออกจาก image context
-
-ติดตั้ง Podman บน Windows:
-
-```powershell
-winget install RedHat.Podman
-podman machine init
-podman machine start
-podman --version
-```
-
-Build และ run ด้วยคำสั่งตรง:
-
-```powershell
-Copy-Item .env.example .env
-podman build -t mp3-to-mp4-youtube .
-podman run --rm -p 4000:4000 --env-file .env mp3-to-mp4-youtube
-```
-
-หรือใช้ compose:
-
-```powershell
-Copy-Item .env.example .env
-podman compose up --build
-```
-
-เปิดเว็บที่ `http://localhost:4000`
-
-สำหรับ Podman ให้ตั้งค่า OAuth redirect URI เป็น:
-
-```text
-http://localhost:4000/api/youtube/callback
-```
-
-และใน `.env` แนะนำให้ใช้:
-
-```env
-CLIENT_URL=http://localhost:4000
+PORT=4000
+HOST=0.0.0.0
+CLIENT_URL=http://localhost:5173
 SERVER_PUBLIC_URL=http://localhost:4000
-GOOGLE_REDIRECT_URI=http://localhost:4000/api/youtube/callback
-```
 
-## Environment สำคัญ
-
-```env
 MAX_UPLOAD_MB=250
+CLIENT_YOUTUBE_MAX_UPLOAD_MB=2048
+
 VIDEO_WIDTH=1280
 VIDEO_HEIGHT=720
 VIDEO_CRF=30
 FFMPEG_PRESET=veryfast
 AUDIO_BITRATE=192k
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/youtube/callback
+COOKIE_SECURE=false
 ```
 
-ค่าเริ่มต้นเน้นไฟล์เล็กและแปลงเร็วสำหรับภาพนิ่ง + audio คุณภาพดี ถ้าต้องการคุณภาพภาพสูงขึ้นให้ลด `VIDEO_CRF` เช่น `26` แต่ไฟล์จะใหญ่ขึ้น
+---
 
-## API โดยย่อ
+## Google OAuth + YouTube Setup
 
+1. Open Google Cloud Console / เปิด Google Cloud Console
+2. Enable **YouTube Data API v3** / เปิดใช้ **YouTube Data API v3**
+3. Create OAuth client (Web application) / สร้าง OAuth client แบบ Web application
+4. Add redirect URI:
+   - Local: `http://localhost:4000/api/youtube/callback`
+   - Production: `https://convert.kindeeyudee.com/api/youtube/callback`
+5. Put credentials in `server/.env` / ใส่ credentials ใน `server/.env`
+
+If app is in testing mode, add your Google account as test user.  
+ถ้าแอปยังอยู่โหมดทดสอบ ให้เพิ่มบัญชี Google ของคุณเป็น test user
+
+---
+
+## API Overview / ภาพรวม API
+
+Health:
 - `GET /api/health`
+
+YouTube:
 - `GET /api/youtube/status`
 - `GET /api/youtube/auth-url`
 - `GET /api/youtube/callback`
-- `POST /api/jobs` server-side fallback multipart fields: `mp3`, `image`, `mode`, `title`, `description`, `privacyStatus`
-- `POST /api/jobs/client-youtube` multipart fields: `video`, `title`, `description`, `privacyStatus`
-- `GET /api/jobs/:id/events` SSE realtime progress
+- `POST /api/youtube/disconnect`
+- `GET /api/youtube/playlists`
+
+Jobs:
+- `POST /api/jobs`
+- `GET /api/jobs/:id`
+- `GET /api/jobs/:id/events` (SSE)
 - `GET /api/jobs/:id/download`
 
-## หมายเหตุด้าน production
+Client YouTube upload flow:
+- `POST /api/jobs/client-youtube/uploads`
+- `PUT /api/jobs/client-youtube/uploads/:uploadId/chunks`
+- `POST /api/jobs/client-youtube/uploads/:uploadId/complete`
 
-ตัวอย่างนี้เก็บ OAuth token ใน memory session เพื่อไม่เขียนข้อมูลถาวรลง server ถ้าจะใช้ production หลาย instance ควรเปลี่ยนเป็น encrypted session store ภายนอก และเปิด HTTPS พร้อม `COOKIE_SECURE=true`
+T2S:
+- `POST /api/t2s/chunk`
+- `POST /api/t2s/synthesize` (available in backend)
 
-Client-side conversion ใช้ RAM/CPU ของ browser ผู้ใช้ ไฟล์ใหญ่มากอาจช้าหรือ memory ไม่พอบนมือถือ แนะนำจำกัดขนาดไฟล์และแสดงคำเตือนใน production
+---
+
+## Podman
+
+Build:
+
+```powershell
+podman build -t mp3-to-mp4-youtube .
+```
+
+Run:
+
+```powershell
+podman run --rm -p 4000:4000 --env-file server/.env mp3-to-mp4-youtube
+```
+
+Compose:
+
+```powershell
+podman compose up --build
+```
+
+---
+
+## Production Notes / หมายเหตุสำหรับ Production
+
+- Apache serves frontend and proxies `/api` to Node (PM2).  
+  Apache เสิร์ฟ frontend และ proxy `/api` ไป Node (PM2)
+- Same domain for frontend + API.  
+  ใช้โดเมนเดียวกันสำหรับ frontend + API
+- Keep `.env` private and enable HTTPS.  
+  เก็บ `.env` เป็นความลับและเปิด HTTPS
+
+Detailed docs:
+- `deploy/README.md`
+- `deploy/PRODUCTION_NOTES.md`
+
+---
+
+## Known Constraints / ข้อจำกัด
+
+- `gtts` is not Google Cloud Neural2/Wavenet.  
+  `gtts` ไม่ใช่ Google Cloud Neural2/Wavenet
+- Large text/audio jobs may still be limited by browser memory/network.  
+  งานข้อความ/เสียงขนาดใหญ่ยังขึ้นกับหน่วยความจำเบราว์เซอร์และเครือข่าย
