@@ -17,7 +17,7 @@ export async function synthesizeTextToMp3({ text, lang = 'th', speed = 1, model 
   }
   const normalizedModel = String(model || 'gtts').trim().toLowerCase();
   if (!['gtts', 'piper', 'vits'].includes(normalizedModel)) {
-    throw new Error('Unsupported T2S model. Use "gtts", "piper", or "vits".');
+    throw httpError(400, 'Unsupported T2S model. Use "gtts", "piper", or "vits".');
   }
 
   const normalizedSpeed = clamp(
@@ -120,7 +120,8 @@ function resolvePiperModel(lang) {
   const mapped = config.piperModelMap?.[langKey];
   const modelPath = mapped || config.piperModel;
   if (!modelPath) {
-    throw new Error(
+    throw httpError(
+      400,
       'PiperTTS model is not configured. Set PIPER_MODEL or PIPER_MODEL_MAP in server/.env.',
     );
   }
@@ -132,7 +133,8 @@ function resolveVitsModel(lang) {
   const mapped = config.vitsModelMap?.[langKey];
   const modelPath = mapped || config.vitsModel;
   if (!modelPath) {
-    throw new Error(
+    throw httpError(
+      400,
       'VITS model is not configured. Set VITS_MODEL or VITS_MODEL_MAP in server/.env.',
     );
   }
@@ -153,7 +155,8 @@ async function runPiperSynthesis({ text, modelPath, wavPath }) {
     });
     piper.on('error', (error) => {
       reject(
-        new Error(
+        httpError(
+          503,
           `Could not start PiperTTS. Install piper and set PIPER_PATH correctly. Details: ${error.message}`,
         ),
       );
@@ -161,7 +164,8 @@ async function runPiperSynthesis({ text, modelPath, wavPath }) {
     piper.on('close', (code) => {
       if (code !== 0) {
         reject(
-          new Error(
+          httpError(
+            503,
             stderr.trim() ||
               `PiperTTS synthesis failed with code ${code}. Check PIPER_MODEL path and voice file.`,
           ),
@@ -191,7 +195,8 @@ async function runVitsSynthesis({ text, modelPath, wavPath, lang = '' }) {
     });
     vits.on('error', (error) => {
       reject(
-        new Error(
+        httpError(
+          503,
           `Could not start VITS. Install VITS runtime and set VITS_PATH correctly. Details: ${error.message}`,
         ),
       );
@@ -199,7 +204,8 @@ async function runVitsSynthesis({ text, modelPath, wavPath, lang = '' }) {
     vits.on('close', (code) => {
       if (code !== 0) {
         reject(
-          new Error(
+          httpError(
+            503,
             stderr.trim() ||
               `VITS synthesis failed with code ${code}. Check VITS_MODEL and VITS_ARGS configuration.`,
           ),
@@ -417,4 +423,10 @@ function streamToBuffer(stream) {
       resolve(Buffer.concat(chunks));
     });
   });
+}
+
+function httpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
 }
