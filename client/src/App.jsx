@@ -32,6 +32,7 @@ import { convertMp3ImageToMp4 } from './lib/clientFfmpeg';
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
+const CLIENT_YOUTUBE_CHUNK_BYTES = 8 * 1024 * 1024;
 
 const initialJob = {
   status: 'idle',
@@ -290,53 +291,80 @@ function App() {
     }
   }
 
-  function sendClientMp4ToYoutube(mp4Blob) {
-    return new Promise((resolve, reject) => {
-      const form = new FormData();
-      form.append('video', mp4Blob, `${slugifyTitle(title)}.mp4`);
-      form.append('title', title);
-      form.append('description', description);
-      form.append('privacyStatus', privacyStatus);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_URL}/api/jobs/client-youtube`);
-      xhr.withCredentials = true;
-
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return;
-        const percent = Math.round((event.loaded / event.total) * 100);
-        setClientUploadProgress(percent);
-        setJob((current) => ({
-          ...current,
-          stage: 'transferring',
-          progress: Math.min(82, 72 + Math.round(percent * 0.1)),
-          message: `Sending converted MP4 ${percent}%`,
-        }));
-      };
-
-      xhr.onload = () => {
-        let data;
-        try {
-          data = JSON.parse(xhr.responseText);
-        } catch {
-          data = {};
-        }
-
-        if (xhr.status >= 400) {
-          reject(new Error(data.error || 'Could not start YouTube upload.'));
-          return;
-        }
-
-        setClientUploadProgress(100);
-        resolve(data.jobId);
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('Network error while sending the MP4 to the upload service.'));
-      };
-
-      xhr.send(form);
+  async function sendClientMp4ToYoutube(mp4Blob) {
+    const { uploadId } = await postJson('/api/jobs/client-youtube/uploads', {
+      fileName: `${slugifyTitle(title)}.mp4`,
+      fileSize: mp4Blob.size,
+      title,
+      description,
+      privacyStatus,
     });
+    setClientUploadProgress(1);
+
+    let uploadedBytes = 0;
+    let chunkIndex = 0;
+
+    while (uploadedBytes < mp4Blob.size) {
+      const start = uploadedBytes;
+      const end = Math.min(start + CLIENT_YOUTUBE_CHUNK_BYTES, mp4Blob.size);
+      const chunk = mp4Blob.slice(start, end, 'video/mp4');
+
+      const response = await fetch(
+        `${API_URL}/api/jobs/client-youtube/uploads/${uploadId}/chunks?index=${chunkIndex}`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Range': `bytes ${start}-${end - 1}/${mp4Blob.size}`,
+          },
+          body: chunk,
+        },
+      );
+
+      if (!response.ok) {
+        const data = await readJsonResponse(response);
+        throw new Error(data.error || 'Could not send the converted MP4 chunk.');
+      }
+
+      uploadedBytes = end;
+      chunkIndex += 1;
+      const percent = Math.max(1, Math.round((uploadedBytes / mp4Blob.size) * 100));
+      setClientUploadProgress(percent);
+      setJob((current) => ({
+        ...current,
+        stage: 'transferring',
+        progress: Math.min(82, 72 + Math.round(percent * 0.1)),
+        message: `Sending converted MP4 ${percent}%`,
+      }));
+    }
+
+    const data = await postJson(`/api/jobs/client-youtube/uploads/${uploadId}/complete`, {});
+    setClientUploadProgress(100);
+    return data.jobId;
+  }
+
+  async function postJson(pathname, body) {
+    const response = await fetch(`${API_URL}${pathname}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed.');
+    }
+    return data;
+  }
+
+  async function readJsonResponse(response) {
+    try {
+      return await response.json();
+    } catch {
+      return {};
+    }
   }
 
   function subscribeToJob(jobId) {

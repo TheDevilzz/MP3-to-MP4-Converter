@@ -30,6 +30,8 @@ import {
 } from './youtube.js';
 
 const app = express();
+const clientYoutubeChunkBytes = 8 * 1024 * 1024;
+const clientYoutubeChunkLimit = '10mb';
 
 await fs.mkdir(config.tempRoot, { recursive: true });
 
@@ -138,6 +140,161 @@ app.get('/api/youtube/callback', async (req, res) => {
 app.post('/api/youtube/disconnect', (req, res) => {
   disconnectYoutubeSession(req, res);
   res.json({ connected: false });
+});
+
+app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
+  try {
+    const session = getYoutubeSession(req);
+    if (!session) {
+      return res.status(401).json({ error: 'Connect YouTube before uploading.' });
+    }
+
+    const body = req.body || {};
+    const fileSize = Number(body.fileSize || 0);
+    const maxBytes = config.maxUploadMb * 1024 * 1024;
+    if (!Number.isFinite(fileSize) || fileSize <= 0) {
+      return res.status(400).json({ error: 'Invalid converted MP4 size.' });
+    }
+    if (fileSize > maxBytes) {
+      return res.status(413).json({
+        error: `Converted MP4 is larger than the ${config.maxUploadMb}MB server limit.`,
+      });
+    }
+
+    const uploadId = randomUUID();
+    const uploadDir = uploadDirForId(uploadId);
+    await fs.mkdir(uploadDir, { recursive: true });
+    await writeClientUploadMetadata(uploadId, {
+      uploadId,
+      youtubeSessionId: session.id,
+      title: String(body.title || 'Converted MP3 Video').trim(),
+      description: String(body.description || '').trim(),
+      privacyStatus: String(body.privacyStatus || 'private'),
+      fileName: String(body.fileName || 'converted-mp3-video.mp4'),
+      fileSize,
+      receivedBytes: 0,
+      chunks: 0,
+      createdAt: Date.now(),
+    });
+
+    res.status(201).json({ uploadId, chunkBytes: clientYoutubeChunkBytes });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put(
+  '/api/jobs/client-youtube/uploads/:uploadId/chunks',
+  express.raw({ type: 'application/octet-stream', limit: clientYoutubeChunkLimit }),
+  async (req, res, next) => {
+    try {
+      const { uploadId } = req.params;
+      const metadata = await readClientUploadMetadata(uploadId);
+      const session = getYoutubeSession(req);
+      if (!session || session.id !== metadata.youtubeSessionId) {
+        await cleanupUploadDir(uploadDirForId(uploadId));
+        return res.status(401).json({ error: 'YouTube session expired. Please connect again.' });
+      }
+
+      const chunk = Buffer.isBuffer(req.body) ? req.body : null;
+      if (!chunk?.length) {
+        return res.status(400).json({ error: 'Missing MP4 chunk.' });
+      }
+      if (chunk.length > clientYoutubeChunkBytes) {
+        return res.status(413).json({ error: 'MP4 chunk is too large.' });
+      }
+
+      const range = parseContentRange(req.get('content-range'));
+      if (
+        !range ||
+        range.total !== metadata.fileSize ||
+        range.start !== metadata.receivedBytes ||
+        range.end - range.start + 1 !== chunk.length
+      ) {
+        return res.status(409).json({ error: 'MP4 chunks arrived out of order.' });
+      }
+
+      const videoPath = path.join(uploadDirForId(uploadId), 'video.mp4');
+      const handle = await fs.open(videoPath, 'a');
+      try {
+        await handle.writeFile(chunk);
+      } finally {
+        await handle.close();
+      }
+
+      metadata.receivedBytes += chunk.length;
+      metadata.chunks += 1;
+      await writeClientUploadMetadata(uploadId, metadata);
+
+      res.json({
+        receivedBytes: metadata.receivedBytes,
+        percent: Math.round((metadata.receivedBytes / metadata.fileSize) * 100),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', async (req, res, next) => {
+  try {
+    const { uploadId } = req.params;
+    const metadata = await readClientUploadMetadata(uploadId);
+    const session = getYoutubeSession(req);
+    if (!session || session.id !== metadata.youtubeSessionId) {
+      await cleanupUploadDir(uploadDirForId(uploadId));
+      return res.status(401).json({ error: 'YouTube session expired. Please connect again.' });
+    }
+
+    const uploadDir = uploadDirForId(uploadId);
+    const videoPath = path.join(uploadDir, 'video.mp4');
+    const videoStat = await fs.stat(videoPath);
+    if (videoStat.size !== metadata.fileSize || metadata.receivedBytes !== metadata.fileSize) {
+      return res.status(409).json({ error: 'The converted MP4 upload is incomplete.' });
+    }
+
+    const job = createJob({
+      dir: uploadDir,
+      audioPath: null,
+      imagePath: null,
+      outputPath: videoPath,
+      mode: 'youtube',
+      title: metadata.title,
+      description: metadata.description,
+      privacyStatus: metadata.privacyStatus,
+      youtubeSessionId: metadata.youtubeSessionId,
+      downloadUrl: null,
+      youtubeUrl: null,
+      youtubeVideoId: null,
+      outputBytes: videoStat.size,
+      convertProgress: 100,
+      uploadProgress: 0,
+      progress: 82,
+      status: 'queued',
+      stage: 'uploading',
+      message: 'Converted MP4 received. Queued for YouTube upload.',
+    });
+
+    res.status(202).json({
+      jobId: job.id,
+      eventUrl: `/api/jobs/${job.id}/events`,
+      statusUrl: `/api/jobs/${job.id}`,
+    });
+
+    setImmediate(() => {
+      processClientYoutubeJob(job.id).catch((error) => {
+        patchJob(job.id, {
+          status: 'error',
+          stage: 'error',
+          error: error.message,
+          message: 'The YouTube upload failed.',
+        });
+        cleanupJobFiles(job.id).catch(() => {});
+      });
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, next) => {
@@ -330,6 +487,12 @@ app.use(async (error, req, res, _next) => {
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ error: error.message });
   }
+  if (error.status === 413 || error.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Uploaded data is too large.' });
+  }
+  if (error.status && Number.isInteger(error.status)) {
+    return res.status(error.status).json({ error: error.message });
+  }
 
   res.status(500).json({ error: error.message || 'Unexpected server error.' });
 });
@@ -488,6 +651,43 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 70) || 'converted-mp3-video';
+}
+
+function uploadDirForId(uploadId) {
+  assertValidUploadId(uploadId);
+  return path.join(config.tempRoot, uploadId);
+}
+
+function uploadMetadataPath(uploadId) {
+  return path.join(uploadDirForId(uploadId), 'upload.json');
+}
+
+function assertValidUploadId(uploadId) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(uploadId || ''))) {
+    throw Object.assign(new Error('Invalid upload id.'), { status: 400 });
+  }
+}
+
+async function readClientUploadMetadata(uploadId) {
+  try {
+    return JSON.parse(await fs.readFile(uploadMetadataPath(uploadId), 'utf8'));
+  } catch {
+    throw Object.assign(new Error('Upload session not found.'), { status: 404 });
+  }
+}
+
+async function writeClientUploadMetadata(uploadId, metadata) {
+  await fs.writeFile(uploadMetadataPath(uploadId), `${JSON.stringify(metadata)}\n`);
+}
+
+function parseContentRange(value) {
+  const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(String(value || ''));
+  if (!match) return null;
+  return {
+    start: Number(match[1]),
+    end: Number(match[2]),
+    total: Number(match[3]),
+  };
 }
 
 async function cleanupUploadDir(dir) {
