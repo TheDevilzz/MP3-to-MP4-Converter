@@ -49,6 +49,11 @@ export const config = {
     process.env.GOOGLE_REDIRECT_URI ||
     `${serverPublicUrl}/api/youtube/callback`,
   cookieSecure: process.env.COOKIE_SECURE === 'true',
+  authDbPath: process.env.AUTH_DB_PATH || path.join(serverRoot, 'data', 'auth.sqlite3'),
+  mobileSessionTtlHours: Number(process.env.MOBILE_SESSION_TTL_HOURS || 24 * 30),
+  mobileAuthSeedUser: process.env.MOBILE_AUTH_USER || '',
+  mobileAuthSeedPassword: process.env.MOBILE_AUTH_PASSWORD || '',
+  adminDashboardKey: process.env.ADMIN_DASHBOARD_KEY || '',
 };
 
 export const youtubeScopes = [

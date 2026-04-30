@@ -6,6 +6,8 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Progress } from './ui/progress';
 import { Textarea } from './ui/textarea';
+import { synthesizeOnDevice } from '../lib/onDeviceT2s';
+import { convertPcmToMp3 } from '../lib/clientFfmpeg';
 
 const T2S_LANGUAGES = [
   { value: 'th', label: 'Thai' },
@@ -16,15 +18,16 @@ const T2S_LANGUAGES = [
 ];
 
 const T2S_MODELS = [
-  { value: 'gtts', label: 'gTTS' },
-  { value: 'piper', label: 'PiperTTS' },
-  { value: 'vits', label: 'VITS' },
+  { value: 'on-device', label: 'Browser TTS (On-Device)' },
+  { value: 'gtts', label: 'gTTS (Server)' },
+  { value: 'piper', label: 'PiperTTS (Server)' },
+  { value: 'vits', label: 'VITS (Server)' },
 ];
 
 const UI_COPY = {
   th: {
-    title: 'แปลงข้อความเป็นเสียง (gTTS / PiperTTS / VITS)',
-    description: 'อัปโหลดไฟล์ .txt หรือวางข้อความ สร้างเสียงพร้อมกัน และดาวน์โหลด MP3 แยกไฟล์ได้',
+    title: 'แปลงข้อความเป็นเสียง (On-Device / gTTS / Piper)',
+    description: 'ประมวลผลบนเครื่อง (On-Device) ด้วย WebGPU/ONNX ไม่ส่งข้อมูลไปเซิร์ฟเวอร์',
     language: 'ภาษาเสียง',
     model: 'โมเดลเสียง',
     speed: 'ความเร็ว',
@@ -37,7 +40,7 @@ const UI_COPY = {
     startQueue: 'เริ่มคิว T2S',
     clearQueue: 'ล้างคิว',
     queueTitle: 'คิว T2S',
-    queueDescription: 'ไฟล์อยู่ในหน่วยความจำเบราว์เซอร์เท่านั้น ฝั่งเซิร์ฟเวอร์ส่งกลับเฉพาะ chunk เสียง',
+    queueDescription: 'การแปลงเสียงเกิดขึ้นในเบราว์เซอร์ของคุณโดยตรง (On-Device)',
     noItems: 'ยังไม่มีรายการข้อความ',
     waitingAudio: 'รอผลลัพธ์เสียง',
     download: 'ดาวน์โหลด',
@@ -58,8 +61,8 @@ const UI_COPY = {
     selectSave: 'เลือกว่าเซฟไฟล์ไว้ที่ไหน',
   },
   en: {
-    title: 'Text to Speech (gTTS / PiperTTS / VITS)',
-    description: 'Upload .txt or paste text, generate speech in parallel, and download named MP3 files.',
+    title: 'Text to Speech (Browser TTS / gTTS / Piper / VITS)',
+    description: 'Browser TTS runs on-device using WebGPU/WASM + ONNX and encodes MP3 locally.',
     language: 'Speech language',
     model: 'Voice model',
     speed: 'Speed',
@@ -72,7 +75,7 @@ const UI_COPY = {
     startQueue: 'Start T2S Queue',
     clearQueue: 'Clear queue',
     queueTitle: 'T2S Queue',
-    queueDescription: 'Files stay in browser memory. Server only streams generated audio chunks.',
+    queueDescription: 'Speech synthesis happens directly in your browser (On-Device).',
     noItems: 'No text items yet.',
     waitingAudio: 'Waiting for audio output',
     download: 'Download',
@@ -98,7 +101,7 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
   const uploadRef = useRef(null);
   const queueRef = useRef([]);
   const copy = UI_COPY[locale] || UI_COPY.en;
-  const [model, setModel] = useState('gtts');
+  const [model, setModel] = useState('on-device');
   const [language, setLanguage] = useState('th');
   const [speed, setSpeed] = useState(1);
   const [typedText, setTypedText] = useState('');
@@ -188,7 +191,8 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
     setNotice('');
     setIsRunning(true);
     try {
-      await runWithConcurrency(queued.map((item) => item.id), 3, processItem);
+      const concurrency = model === 'on-device' ? 1 : 3;
+      await runWithConcurrency(queued.map((item) => item.id), concurrency, processItem);
       setNotice(copy.queueFinished);
     } finally {
       setIsRunning(false);
@@ -210,54 +214,118 @@ export function T2SPanel({ apiUrl, locale = 'th' }) {
     patchItem(itemId, {
       status: 'running',
       message: `${copy.generating} ${Math.round(speed * 100)}% (${modelLabel}).`,
-      progress: 10,
+      progress: 5,
       error: '',
     });
 
-    const chunks = splitTextForT2s(text);
-    if (!chunks.length) {
-      patchItem(itemId, { status: 'error', message: copy.noText, error: 'Empty content.' });
-      return;
-    }
+    try {
+      if (model === 'on-device') {
+        const chunks = splitTextForT2s(text);
+        if (!chunks.length) {
+          patchItem(itemId, { status: 'error', message: copy.noText, error: 'Empty content.' });
+          return;
+        }
 
-    const audioParts = [];
-    for (let index = 0; index < chunks.length; index += 1) {
-      const chunkText = chunks[index];
-      const response = await fetch(`${apiUrl}/api/t2s/chunk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: chunkText,
-          lang: language,
-          model,
+        const pcmParts = [];
+        let finalSamplingRate = 22050;
+
+        for (let index = 0; index < chunks.length; index += 1) {
+          const chunkText = chunks[index];
+          patchItem(itemId, {
+            message: `Browser TTS chunk ${index + 1}/${chunks.length}`,
+            progress: Math.round((index / chunks.length) * 70) + 5,
+          });
+
+          const { audio, sampling_rate } = await synthesizeOnDevice(chunkText, language, {
+            onStatus: (msg) => patchItem(itemId, { message: `[${index + 1}/${chunks.length}] ${msg}` }),
+          });
+
+          pcmParts.push(audio);
+          finalSamplingRate = sampling_rate;
+        }
+
+        patchItem(itemId, { progress: 80, message: 'Encoding MP3 in browser...' });
+
+        const totalLength = pcmParts.reduce((sum, arr) => sum + arr.length, 0);
+        const mergedPcm = new Float32Array(totalLength);
+        let offset = 0;
+        for (const arr of pcmParts) {
+          mergedPcm.set(arr, offset);
+          offset += arr.length;
+        }
+
+        const mp3Blob = await convertPcmToMp3({
+          pcmData: mergedPcm,
+          sampleRate: finalSamplingRate,
           speed,
-        }),
-      });
+          onProgress: (p) => patchItem(itemId, { progress: 80 + (p * 0.2) }),
+        });
 
-      if (!response.ok) {
-        const payload = await safeReadJson(response);
-        throw new Error(payload.error || 'Could not generate speech chunk.');
+        const audioUrl = URL.createObjectURL(mp3Blob);
+        patchItem(itemId, {
+          status: 'completed',
+          message: copy.ready,
+          progress: 100,
+          audioUrl,
+          audioBlob: mp3Blob,
+          bytes: mp3Blob.size,
+        });
+        return;
       }
 
-      const buffer = await response.arrayBuffer();
-      audioParts.push(new Uint8Array(buffer));
+      // Legacy API synthesis (used as primary or fallback)
+      const apiChunks = splitTextForT2s(text);
+      if (!apiChunks.length) {
+        patchItem(itemId, { status: 'error', message: copy.noText, error: 'Empty content.' });
+        return;
+      }
+
+      const audioParts = [];
+      for (let index = 0; index < apiChunks.length; index += 1) {
+        const chunkText = apiChunks[index];
+        const response = await fetch(`${apiUrl}/api/t2s/chunk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: chunkText,
+            lang: language,
+            model,
+            speed,
+          }),
+        });
+
+        if (!response.ok) {
+          const payload = await safeReadJson(response);
+          throw new Error(payload.error || 'Could not generate speech chunk.');
+        }
+
+        const buffer = await response.arrayBuffer();
+        audioParts.push(new Uint8Array(buffer));
+        patchItem(itemId, {
+          progress: Math.round(((index + 1) / apiChunks.length) * 100),
+          message: `${copy.generatedChunks} ${index + 1}`,
+        });
+      }
+
+      const merged = concatUint8Arrays(audioParts);
+      const blob = new Blob([merged], { type: 'audio/mpeg' });
+      const audioUrl = URL.createObjectURL(blob);
       patchItem(itemId, {
-        progress: Math.round(((index + 1) / chunks.length) * 100),
-        message: `${copy.generatedChunks} ${index + 1}`,
+        status: 'completed',
+        message: copy.ready,
+        progress: 100,
+        audioUrl,
+        audioBlob: blob,
+        bytes: blob.size,
+      });
+    } catch (err) {
+      console.error('T2S processing error:', err);
+      patchItem(itemId, {
+        status: 'error',
+        message: 'Processing failed.',
+        error: err.message || 'Unknown error',
       });
     }
-
-    const merged = concatUint8Arrays(audioParts);
-    const blob = new Blob([merged], { type: 'audio/mpeg' });
-    const audioUrl = URL.createObjectURL(blob);
-    patchItem(itemId, {
-      status: 'completed',
-      message: copy.ready,
-      progress: 100,
-      audioUrl,
-      audioBlob: blob,
-      bytes: blob.size,
-    });
   }
 
   function patchItem(itemId, patch) {
@@ -572,7 +640,9 @@ function concatUint8Arrays(arrays) {
 function sanitizeName(value) {
   return String(value || '')
     .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .slice(0, 120);
 }

@@ -34,23 +34,23 @@ export async function convertMp3ToMp4({ audioPath, imagePath, outputPath }, onPr
   const coverWidth = Math.round(width * 0.72);
   const coverHeight = Math.round(height * 0.76);
 
-  const filter = [
-    `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},boxblur=18:1,eq=brightness=-0.08:saturation=0.85[bg]`,
-    `[0:v]scale=${coverWidth}:${coverHeight}:force_original_aspect_ratio=decrease,format=rgba[cover]`,
-    `[bg][cover]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`,
-  ].join(';');
+  const hasImage = Boolean(imagePath);
+  const filter = hasImage
+    ? [
+        `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},boxblur=18:1,eq=brightness=-0.08:saturation=0.85[bg]`,
+        `[0:v]scale=${coverWidth}:${coverHeight}:force_original_aspect_ratio=decrease,format=rgba[cover]`,
+        `[bg][cover]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`,
+      ].join(';')
+    : '[0:v]format=yuv420p[v]';
+
+  const inputArgs = hasImage
+    ? ['-loop', '1', '-framerate', '2', '-i', imagePath, '-i', audioPath]
+    : ['-f', 'lavfi', '-i', `color=c=0x0f172a:s=${width}x${height}:r=2`, '-i', audioPath];
 
   const args = [
     '-hide_banner',
     '-y',
-    '-loop',
-    '1',
-    '-framerate',
-    '2',
-    '-i',
-    imagePath,
-    '-i',
-    audioPath,
+    ...inputArgs,
     '-filter_complex',
     filter,
     '-map',

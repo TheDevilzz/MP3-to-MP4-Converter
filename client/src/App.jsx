@@ -41,6 +41,10 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://localhost:4000' : window.location.origin);
 const CLIENT_YOUTUBE_CHUNK_BYTES = 8 * 1024 * 1024;
+const IS_MOBILE_DEVICE =
+  typeof navigator !== 'undefined' &&
+  (navigator.userAgentData?.mobile ||
+    /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent || ''));
 const YOUTUBE_CATEGORIES = [
   { id: '1', label: 'Film & Animation' },
   { id: '2', label: 'Autos & Vehicles' },
@@ -230,7 +234,21 @@ function App() {
     connected: false,
     channel: null,
   });
+  const [mobileAuth, setMobileAuth] = useState({
+    required: IS_MOBILE_DEVICE,
+    authenticated: !IS_MOBILE_DEVICE,
+    user: null,
+    loaded: false,
+  });
+  const [mobileUsername, setMobileUsername] = useState('');
+  const [mobilePassword, setMobilePassword] = useState('');
+  const [mobileAuthBusy, setMobileAuthBusy] = useState(false);
   const [youtubePlaylists, setYoutubePlaylists] = useState([]);
+  const [adminKey, setAdminKey] = useState('');
+  const [dashboardHours, setDashboardHours] = useState(24);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardOverview, setDashboardOverview] = useState(null);
+  const [dashboardUsers, setDashboardUsers] = useState([]);
   const [health, setHealth] = useState({ checked: false, ok: false, ffmpeg: false });
   const [promptPayQrDataUrl, setPromptPayQrDataUrl] = useState('');
   const [notice, setNotice] = useState(() =>
@@ -307,20 +325,51 @@ function App() {
   useEffect(() => {
     let active = true;
 
-    fetch(`${API_URL}/api/youtube/status`, { credentials: 'include' })
-      .then((response) => response.json())
-      .then((data) => {
-        if (active) {
-          setYoutube(data);
-          if (data.connected) loadYoutubePlaylists().catch(() => {});
+    (async () => {
+      try {
+        const authResponse = await fetch(`${API_URL}/api/mobile-auth/status`, {
+          credentials: 'include',
+        });
+        const authData = await readJsonResponse(authResponse);
+        if (!active) return;
+
+        const nextAuth = {
+          required: Boolean(authData.required),
+          authenticated: Boolean(authData.authenticated),
+          user: authData.user || null,
+          loaded: true,
+        };
+        setMobileAuth(nextAuth);
+
+        if (nextAuth.required && !nextAuth.authenticated) {
+          return;
         }
-      })
-      .catch(() => {
+
+        fetch(`${API_URL}/api/youtube/status`, { credentials: 'include' })
+          .then((response) => response.json())
+          .then((data) => {
+            if (active) {
+              setYoutube(data);
+              if (data.connected) loadYoutubePlaylists().catch(() => {});
+            }
+          })
+          .catch(() => {
+            if (active) {
+              setYoutube({ configured: false, connected: false, channel: null });
+              setYoutubePlaylists([]);
+            }
+          });
+      } catch {
         if (active) {
-          setYoutube({ configured: false, connected: false, channel: null });
-          setYoutubePlaylists([]);
+          setMobileAuth({
+            required: IS_MOBILE_DEVICE,
+            authenticated: !IS_MOBILE_DEVICE,
+            user: null,
+            loaded: true,
+          });
         }
-      });
+      }
+    })();
 
     fetch(`${API_URL}/api/health`, { credentials: 'include' })
       .then(async (response) => {
@@ -350,6 +399,10 @@ function App() {
   }, []);
 
   async function loginWithYoutube() {
+    if (mobileAuth.required && !mobileAuth.authenticated) {
+      setError('Please login on mobile first.');
+      return;
+    }
     setError('');
     const response = await fetch(`${API_URL}/api/youtube/auth-url`, {
       credentials: 'include',
@@ -389,7 +442,128 @@ function App() {
     setYoutubePlaylists(Array.isArray(data.playlists) ? data.playlists : []);
   }
 
+  async function loadDashboard() {
+    if (!adminKey.trim()) {
+      setError('Please enter ADMIN_DASHBOARD_KEY first.');
+      return;
+    }
+
+    setDashboardLoading(true);
+    setError('');
+    try {
+      const headers = { 'x-admin-key': adminKey.trim() };
+      const [overviewRes, usersRes] = await Promise.all([
+        fetch(`${API_URL}/api/admin/overview?hours=${dashboardHours}`, {
+          credentials: 'include',
+          headers,
+        }),
+        fetch(`${API_URL}/api/admin/users?limit=200`, {
+          credentials: 'include',
+          headers,
+        }),
+      ]);
+
+      const overviewData = await readJsonResponse(overviewRes);
+      const usersData = await readJsonResponse(usersRes);
+      if (!overviewRes.ok) {
+        throw new Error(overviewData.error || 'Could not load dashboard overview.');
+      }
+      if (!usersRes.ok) {
+        throw new Error(usersData.error || 'Could not load dashboard users.');
+      }
+
+      setDashboardOverview(overviewData);
+      setDashboardUsers(Array.isArray(usersData.users) ? usersData.users : []);
+      setNotice('Dashboard loaded.');
+    } catch (dashboardError) {
+      setError(getErrorMessage(dashboardError, 'Could not load dashboard.'));
+    } finally {
+      setDashboardLoading(false);
+    }
+  }
+
+  async function loginMobileAuth(mode = 'login') {
+    if (!mobileUsername.trim() || !mobilePassword) {
+      setError('Please enter username and password.');
+      return;
+    }
+
+    setMobileAuthBusy(true);
+    setError('');
+    try {
+      if (mode === 'register') {
+        const registerResponse = await fetch(`${API_URL}/api/mobile-auth/register`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: mobileUsername.trim(),
+            password: mobilePassword,
+          }),
+        });
+        const registerData = await readJsonResponse(registerResponse);
+        if (!registerResponse.ok) {
+          throw new Error(registerData.error || 'Could not create mobile account.');
+        }
+      }
+
+      const response = await fetch(`${API_URL}/api/mobile-auth/login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: mobileUsername.trim(),
+          password: mobilePassword,
+        }),
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok) {
+        throw new Error(data.error || 'Mobile login failed.');
+      }
+
+      setMobileAuth({
+        required: true,
+        authenticated: true,
+        user: data.user || { username: mobileUsername.trim() },
+        loaded: true,
+      });
+      setNotice('Mobile login successful.');
+      setMobilePassword('');
+
+      const ytRes = await fetch(`${API_URL}/api/youtube/status`, { credentials: 'include' });
+      const ytData = await readJsonResponse(ytRes);
+      if (ytRes.ok) {
+        setYoutube(ytData);
+        if (ytData.connected) loadYoutubePlaylists().catch(() => {});
+      }
+    } catch (authError) {
+      setError(getErrorMessage(authError, 'Mobile login failed.'));
+    } finally {
+      setMobileAuthBusy(false);
+    }
+  }
+
+  async function logoutMobileAuth() {
+    await fetch(`${API_URL}/api/mobile-auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    setMobileAuth({
+      required: true,
+      authenticated: false,
+      user: null,
+      loaded: true,
+    });
+    setYoutube({ configured: false, connected: false, channel: null });
+    setYoutubePlaylists([]);
+    setNotice('Mobile session signed out.');
+  }
+
   function addQueueItem() {
+    if (mobileAuth.required && !mobileAuth.authenticated) {
+      setError('Please login on mobile first.');
+      return;
+    }
     setError('');
     setNotice('');
 
@@ -490,6 +664,10 @@ function App() {
   }
 
   async function startQueue() {
+    if (mobileAuth.required && !mobileAuth.authenticated) {
+      setError('Please login on mobile first.');
+      return;
+    }
     if (isQueueRunning) return;
     if (!queueRef.current.length) {
       setError('Please add at least one queue item first.');
@@ -513,9 +691,15 @@ function App() {
         return;
       }
 
-      const conversionPromise = Promise.all(queuedIds.map((id) => processQueueConversion(id)));
-      await processYoutubeUploadsInQueueOrder(queuedIds);
-      await conversionPromise;
+      if (IS_MOBILE_DEVICE) {
+        for (const id of queuedIds) {
+          await processQueueConversion(id);
+        }
+      } else {
+        const conversionPromise = Promise.all(queuedIds.map((id) => processQueueConversion(id)));
+        await processYoutubeUploadsInQueueOrder(queuedIds);
+        await conversionPromise;
+      }
 
       setNotice('Queue finished.');
     } finally {
@@ -527,6 +711,11 @@ function App() {
   async function processQueueConversion(itemId) {
     const item = queueRef.current.find((candidate) => candidate.id === itemId);
     if (!item) return;
+
+    if (IS_MOBILE_DEVICE) {
+      await processQueueConversionOnServer(itemId, item);
+      return;
+    }
 
     setActiveItemId(itemId);
     phaseRef.current[itemId] = 'loading';
@@ -639,6 +828,93 @@ function App() {
       delete phaseRef.current[itemId];
       delete conversionStartedAtRef.current[itemId];
     }
+  }
+
+  async function processQueueConversionOnServer(itemId, item) {
+    setActiveItemId(itemId);
+    updateQueueItem(itemId, {
+      status: 'running',
+      stage: 'uploading',
+      message: 'Mobile mode: sending files to backend converter.',
+      progress: 4,
+      convertProgress: 0,
+      uploadProgress: 0,
+      transferProgress: 8,
+      error: '',
+      etaText: '',
+      youtubeUrl: '',
+      youtubeVideoId: '',
+    });
+
+    const form = new FormData();
+    form.append('mp3', item.mp3File);
+    if (item.imageFile) {
+      form.append('image', item.imageFile);
+    }
+    form.append('mode', item.mode);
+    form.append('title', item.title);
+    form.append('description', item.description || '');
+    form.append('privacyStatus', item.privacyStatus || 'private');
+    form.append('categoryId', item.categoryId || '22');
+    form.append('playlistId', item.playlistId || '');
+    form.append('scheduleEnabled', item.scheduleEnabled ? 'true' : 'false');
+    form.append('scheduledAt', item.scheduledAt || '');
+
+    const startResponse = await fetch(`${API_URL}/api/jobs`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    const startData = await readJsonResponse(startResponse);
+    if (!startResponse.ok) {
+      throw new Error(startData.error || 'Could not start backend conversion.');
+    }
+
+    await subscribeToServerJob(startData.jobId, itemId);
+  }
+
+  async function subscribeToServerJob(jobId, itemId) {
+    eventSourceRef.current?.close();
+
+    await new Promise((resolve, reject) => {
+      const source = new EventSource(`${API_URL}/api/jobs/${jobId}/events`, {
+        withCredentials: true,
+      });
+      eventSourceRef.current = source;
+
+      source.addEventListener('job', (event) => {
+        const nextJob = JSON.parse(event.data);
+        const isDownloadReady = nextJob.mode === 'download' && nextJob.downloadUrl;
+        updateQueueItem(itemId, {
+          status: nextJob.status,
+          stage: nextJob.stage,
+          progress: nextJob.progress || 0,
+          convertProgress: nextJob.convertProgress || 0,
+          uploadProgress: nextJob.uploadProgress || 0,
+          message: nextJob.message || '',
+          error: nextJob.error || '',
+          youtubeUrl: nextJob.youtubeUrl || '',
+          youtubeVideoId: nextJob.youtubeVideoId || '',
+          outputBytes: nextJob.outputBytes || 0,
+          downloadHref: isDownloadReady ? `${API_URL}${nextJob.downloadUrl}` : '',
+        });
+
+        if (nextJob.status === 'completed') {
+          source.close();
+          resolve();
+          return;
+        }
+        if (nextJob.status === 'error' || nextJob.status === 'cancelled') {
+          source.close();
+          reject(new Error(nextJob.error || 'Backend conversion failed.'));
+        }
+      });
+
+      source.onerror = () => {
+        source.close();
+        reject(new Error('Realtime connection lost during backend conversion.'));
+      };
+    });
   }
 
   async function uploadConvertedQueueItem(itemId) {
@@ -822,6 +1098,11 @@ function App() {
 
           <div className="flex items-center justify-between gap-3 sm:justify-end">
             <Badge variant={activeStatus.variant}>{activeStatus.label}</Badge>
+            {mobileAuth.required && mobileAuth.authenticated ? (
+              <Button type="button" variant="outline" size="sm" onClick={logoutMobileAuth}>
+                {mobileAuth.user?.username || 'Mobile user'}: Logout
+              </Button>
+            ) : null}
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
               <Label htmlFor="ui-locale" className="text-xs text-muted-foreground">
                 UI
@@ -848,8 +1129,57 @@ function App() {
           </div>
         </header>
 
+        {mobileAuth.required && !mobileAuth.authenticated ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Mobile Login Required</CardTitle>
+              <CardDescription>
+                This phone must sign in before using Studio/T2S. Desktop remains open without login.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-auth-user">Username</Label>
+                  <Input
+                    id="mobile-auth-user"
+                    value={mobileUsername}
+                    onChange={(event) => setMobileUsername(event.target.value)}
+                    placeholder="your username"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-auth-pass">Password</Label>
+                  <Input
+                    id="mobile-auth-pass"
+                    type="password"
+                    value={mobilePassword}
+                    onChange={(event) => setMobilePassword(event.target.value)}
+                    placeholder="your password"
+                    autoComplete="current-password"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" disabled={mobileAuthBusy} onClick={() => loginMobileAuth('login')}>
+                  {mobileAuthBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+                  Login
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={mobileAuthBusy}
+                  onClick={() => loginMobileAuth('register')}
+                >
+                  Register + Login
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
         <Tabs value={view} onValueChange={setView} className="space-y-5">
-          <TabsList className="grid w-full grid-cols-4 sm:w-[560px]">
+          <TabsList className="grid w-full grid-cols-5 sm:w-[700px]">
             <TabsTrigger value="studio">
               <FileAudio aria-hidden="true" />
               {t.tabStudio}
@@ -865,6 +1195,10 @@ function App() {
             <TabsTrigger value="donate">
               <HeartHandshake aria-hidden="true" />
               {t.tabDonate}
+            </TabsTrigger>
+            <TabsTrigger value="dashboard">
+              <TvMinimalPlay aria-hidden="true" />
+              Dashboard
             </TabsTrigger>
           </TabsList>
 
@@ -1368,7 +1702,112 @@ function App() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="dashboard">
+            <Card>
+              <CardHeader>
+                <CardTitle>Usage Dashboard</CardTitle>
+                <CardDescription>
+                  View request usage, top APIs, user list, and last login IP per user.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_auto]">
+                  <Input
+                    value={adminKey}
+                    onChange={(event) => setAdminKey(event.target.value)}
+                    placeholder="ADMIN_DASHBOARD_KEY"
+                    autoComplete="off"
+                  />
+                  <Input
+                    type="number"
+                    min="1"
+                    max="720"
+                    value={dashboardHours}
+                    onChange={(event) => setDashboardHours(Number(event.target.value) || 24)}
+                    placeholder="Hours"
+                  />
+                  <Button type="button" onClick={loadDashboard} disabled={dashboardLoading}>
+                    {dashboardLoading ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+                    Load Dashboard
+                  </Button>
+                </div>
+
+                {dashboardOverview ? (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border border-border p-3">
+                      <p className="text-xs text-muted-foreground">Total requests</p>
+                      <p className="mt-1 text-xl font-bold">{dashboardOverview.totalRequests}</p>
+                    </div>
+                    <div className="rounded-lg border border-border p-3">
+                      <p className="text-xs text-muted-foreground">Error requests</p>
+                      <p className="mt-1 text-xl font-bold">{dashboardOverview.errorRequests}</p>
+                    </div>
+                    <div className="rounded-lg border border-border p-3">
+                      <p className="text-xs text-muted-foreground">Mobile requests</p>
+                      <p className="mt-1 text-xl font-bold">{dashboardOverview.mobileRequests}</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="mb-2 font-semibold">Top API Paths</p>
+                    <div className="space-y-2 text-sm">
+                      {(dashboardOverview?.topPaths || []).map((row) => (
+                        <div key={`${row.path}-${row.hits}`} className="flex items-center justify-between">
+                          <span className="truncate">{row.path}</span>
+                          <span className="ml-2 text-muted-foreground">{row.hits}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="mb-2 font-semibold">Top Client IPs</p>
+                    <div className="space-y-2 text-sm">
+                      {(dashboardOverview?.recentIps || []).map((row) => (
+                        <div key={`${row.ip}-${row.hits}`} className="flex items-center justify-between">
+                          <span className="truncate">{row.ip || '-'}</span>
+                          <span className="ml-2 text-muted-foreground">{row.hits}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border p-3">
+                  <p className="mb-2 font-semibold">Users</p>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="text-muted-foreground">
+                        <tr>
+                          <th className="px-2 py-2">Username</th>
+                          <th className="px-2 py-2">Created</th>
+                          <th className="px-2 py-2">Last Login IP</th>
+                          <th className="px-2 py-2">Last Login</th>
+                          <th className="px-2 py-2">Requests</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboardUsers.map((user) => (
+                          <tr key={user.id} className="border-t border-border/60">
+                            <td className="px-2 py-2">{user.username}</td>
+                            <td className="px-2 py-2">{formatDateTime(user.createdAt)}</td>
+                            <td className="px-2 py-2">{user.lastLoginIp || '-'}</td>
+                            <td className="px-2 py-2">{formatDateTime(user.lastLoginAt)}</td>
+                            <td className="px-2 py-2">{user.totalRequests || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+        )}
       </div>
     </main>
   );
@@ -1594,6 +2033,13 @@ function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB'];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
 }
 
 function slugifyTitle(value) {

@@ -9,6 +9,19 @@ import { config } from './config.js';
 import { assertFfmpegAvailable, convertMp3ToMp4, fileExists } from './ffmpeg.js';
 import { synthesizeLongTextToMp3, synthesizeTextToMp3 } from './t2s.js';
 import {
+  initAuthDb,
+  loginMobileUser,
+  logoutMobileUser,
+  mobileAuthStatus,
+  mobileSessionCookie,
+  readDashboardOverview,
+  readDashboardUsers,
+  registerMobileUser,
+  requireMobileAuth,
+  writeApiUsageLog,
+  writeAuthEvent,
+} from './auth.js';
+import {
   cleanupAndForgetJob,
   cleanupJobFiles,
   createJob,
@@ -36,6 +49,7 @@ const clientYoutubeChunkBytes = 8 * 1024 * 1024;
 const clientYoutubeChunkLimit = '10mb';
 
 await fs.mkdir(config.tempRoot, { recursive: true });
+await initAuthDb();
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -76,6 +90,14 @@ app.use(
 );
 app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (!req.path.startsWith('/api/')) return;
+    if (req.path.startsWith('/api/admin/')) return;
+    writeApiUsageLog(req, res);
+  });
+  next();
+});
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -96,7 +118,78 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-app.get('/api/youtube/status', (req, res) => {
+app.get('/api/mobile-auth/status', (req, res) => {
+  res.json(mobileAuthStatus(req));
+});
+
+app.post('/api/mobile-auth/register', (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const username = String(body.username || '').trim();
+    const password = String(body.password || '');
+    const result = registerMobileUser(username, password);
+    res.status(result.created ? 201 : 200).json({
+      ok: true,
+      created: result.created,
+      user: { id: result.id, username: result.username },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/mobile-auth/login', (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const username = String(body.username || '').trim();
+    const password = String(body.password || '');
+    const result = loginMobileUser(username, password);
+    res.cookie(mobileSessionCookie, result.sessionId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: config.cookieSecure,
+      maxAge: config.mobileSessionTtlHours * 60 * 60 * 1000,
+    });
+    writeAuthEvent(req, 'login', result.user);
+    res.json({ ok: true, user: result.user, expiresAt: result.expiresAt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/mobile-auth/logout', (req, res) => {
+  if (req.mobileUser) {
+    writeAuthEvent(req, 'logout', req.mobileUser);
+  }
+  logoutMobileUser(req, res);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/overview', (req, res) => {
+  if (!config.adminDashboardKey) {
+    return res.status(503).json({ error: 'ADMIN_DASHBOARD_KEY is not configured.' });
+  }
+  const key = String(req.get('x-admin-key') || req.query.key || '');
+  if (!key || key !== config.adminDashboardKey) {
+    return res.status(401).json({ error: 'Unauthorized dashboard access.' });
+  }
+  const hours = Number(req.query.hours || 24);
+  res.json(readDashboardOverview(hours));
+});
+
+app.get('/api/admin/users', (req, res) => {
+  if (!config.adminDashboardKey) {
+    return res.status(503).json({ error: 'ADMIN_DASHBOARD_KEY is not configured.' });
+  }
+  const key = String(req.get('x-admin-key') || req.query.key || '');
+  if (!key || key !== config.adminDashboardKey) {
+    return res.status(401).json({ error: 'Unauthorized dashboard access.' });
+  }
+  const limit = Number(req.query.limit || 200);
+  res.json({ users: readDashboardUsers(limit) });
+});
+
+app.get('/api/youtube/status', requireMobileAuth, (req, res) => {
   const session = getYoutubeSession(req);
   res.json({
     configured: isYoutubeConfigured(),
@@ -105,7 +198,7 @@ app.get('/api/youtube/status', (req, res) => {
   });
 });
 
-app.get('/api/youtube/auth-url', (_req, res) => {
+app.get('/api/youtube/auth-url', requireMobileAuth, (_req, res) => {
   try {
     const { url } = createYoutubeAuthUrl();
     res.json({ url });
@@ -114,7 +207,7 @@ app.get('/api/youtube/auth-url', (_req, res) => {
   }
 });
 
-app.get('/api/youtube/callback', async (req, res) => {
+app.get('/api/youtube/callback', requireMobileAuth, async (req, res) => {
   try {
     const { code, state, error, error_description: errorDescription } = req.query;
     if (error) {
@@ -139,12 +232,12 @@ app.get('/api/youtube/callback', async (req, res) => {
   }
 });
 
-app.post('/api/youtube/disconnect', (req, res) => {
+app.post('/api/youtube/disconnect', requireMobileAuth, (req, res) => {
   disconnectYoutubeSession(req, res);
   res.json({ connected: false });
 });
 
-app.post('/api/t2s/chunk', async (req, res, next) => {
+app.post('/api/t2s/chunk', requireMobileAuth, async (req, res, next) => {
   try {
     const body = req.body || {};
     const text = String(body.text || '').trim();
@@ -176,7 +269,7 @@ app.post('/api/t2s/chunk', async (req, res, next) => {
   }
 });
 
-app.post('/api/t2s/synthesize', async (req, res, next) => {
+app.post('/api/t2s/synthesize', requireMobileAuth, async (req, res, next) => {
   try {
     const body = req.body || {};
     const text = String(body.text || '').trim();
@@ -208,7 +301,7 @@ app.post('/api/t2s/synthesize', async (req, res, next) => {
   }
 });
 
-app.get('/api/youtube/playlists', async (req, res) => {
+app.get('/api/youtube/playlists', requireMobileAuth, async (req, res) => {
   try {
     const session = getYoutubeSession(req);
     if (!session) {
@@ -221,7 +314,7 @@ app.get('/api/youtube/playlists', async (req, res) => {
   }
 });
 
-app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
+app.post('/api/jobs/client-youtube/uploads', requireMobileAuth, async (req, res, next) => {
   try {
     const session = getYoutubeSession(req);
     if (!session) {
@@ -267,6 +360,7 @@ app.post('/api/jobs/client-youtube/uploads', async (req, res, next) => {
 
 app.put(
   '/api/jobs/client-youtube/uploads/:uploadId/chunks',
+  requireMobileAuth,
   express.raw({ type: 'application/octet-stream', limit: clientYoutubeChunkLimit }),
   async (req, res, next) => {
     try {
@@ -318,7 +412,7 @@ app.put(
   },
 );
 
-app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', async (req, res, next) => {
+app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', requireMobileAuth, async (req, res, next) => {
   try {
     const { uploadId } = req.params;
     const metadata = await readClientUploadMetadata(uploadId);
@@ -382,7 +476,7 @@ app.post('/api/jobs/client-youtube/uploads/:uploadId/complete', async (req, res,
   }
 });
 
-app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, next) => {
+app.post('/api/jobs/client-youtube', requireMobileAuth, upload.single('video'), async (req, res, next) => {
   try {
     const body = req.body || {};
     const video = req.file;
@@ -451,7 +545,7 @@ app.post('/api/jobs/client-youtube', upload.single('video'), async (req, res, ne
   }
 });
 
-app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'image', maxCount: 1 }]), async (req, res, next) => {
+app.post('/api/jobs', requireMobileAuth, upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'image', maxCount: 1 }]), async (req, res, next) => {
   try {
     const body = req.body || {};
     const audio = req.files?.mp3?.[0];
@@ -464,9 +558,9 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
     const publishAt = normalizePublishAt(body.scheduleEnabled, body.scheduledAt);
     const playlistId = normalizePlaylistId(body.playlistId);
 
-    if (!audio || !image) {
+    if (!audio) {
       await cleanupUploadDir(req.uploadDir);
-      return res.status(400).json({ error: 'Please upload both MP3 and cover image.' });
+      return res.status(400).json({ error: 'Please upload an MP3 file.' });
     }
 
     let youtubeSessionId = null;
@@ -483,7 +577,7 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
     const job = createJob({
       dir: req.uploadDir,
       audioPath: audio.path,
-      imagePath: image.path,
+      imagePath: image?.path || null,
       outputPath,
       mode,
       title,
@@ -521,13 +615,13 @@ app.post('/api/jobs', upload.fields([{ name: 'mp3', maxCount: 1 }, { name: 'imag
   }
 });
 
-app.get('/api/jobs/:id', (req, res) => {
+app.get('/api/jobs/:id', requireMobileAuth, (req, res) => {
   const job = getPublicJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found.' });
   res.json(job);
 });
 
-app.get('/api/jobs/:id/events', (req, res) => {
+app.get('/api/jobs/:id/events', requireMobileAuth, (req, res) => {
   const job = getJob(req.params.id);
   if (!job) return res.status(404).end();
 
@@ -551,7 +645,7 @@ app.get('/api/jobs/:id/events', (req, res) => {
   });
 });
 
-app.get('/api/jobs/:id/download', (req, res) => {
+app.get('/api/jobs/:id/download', requireMobileAuth, (req, res) => {
   const job = getJob(req.params.id);
   if (!job || job.mode !== 'download') {
     return res.status(404).json({ error: 'Download is not available.' });

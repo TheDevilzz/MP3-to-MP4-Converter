@@ -129,6 +129,69 @@ export async function convertMp3ImageToMp4({ audioFile, imageFile, onStage, onPr
   }
 }
 
+/**
+ * Converts raw PCM data (Float32Array) to an MP3 Blob, with optional speed adjustment.
+ */
+export async function convertPcmToMp3({ pcmData, sampleRate = 22050, speed = 1, onProgress }) {
+  if (!pcmData) throw new Error('No PCM data provided.');
+
+  const engine = await loadFfmpeg((percent) => {
+    onProgress?.(Math.min(20, Math.round(percent * 20)));
+  });
+
+  const inputName = 'input.raw';
+  const outputName = 'output.mp3';
+
+  try {
+    // Write Float32Array buffer to FFmpeg virtual FS
+    await engine.writeFile(inputName, new Uint8Array(pcmData.buffer));
+
+    const filters = [];
+    if (speed !== 1) {
+      // atempo filter: values between 0.5 and 2.0. Chain them if needed.
+      let s = speed;
+      while (s > 2) {
+        filters.push('atempo=2.0');
+        s /= 2;
+      }
+      while (s < 0.5) {
+        filters.push('atempo=0.5');
+        s /= 0.5;
+      }
+      filters.push(`atempo=${s.toFixed(2)}`);
+    }
+
+    const args = [
+      '-f', 'f32le',
+      '-ar', String(sampleRate),
+      '-ac', '1',
+      '-i', inputName,
+    ];
+
+    if (filters.length > 0) {
+      args.push('-filter:a', filters.join(','));
+    }
+
+    args.push(
+      '-c:a', 'libmp3lame',
+      '-b:a', '128k',
+      outputName
+    );
+
+    const exitCode = await engine.exec(args);
+
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg PCM to MP3 failed with code ${exitCode}`);
+    }
+
+    const data = await engine.readFile(outputName);
+    return new Blob([data], { type: 'audio/mpeg' });
+  } finally {
+    await cleanupVirtualFile(engine, inputName);
+    await cleanupVirtualFile(engine, outputName);
+  }
+}
+
 async function loadFfmpeg(onLoadProgress) {
   const ffmpeg = new FFmpeg();
   onLoadProgress?.(0.1);
