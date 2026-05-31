@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Convert MP3 audio and cover art into compressed MP4 videos in your browser, then download the file or upload directly to your selected YouTube channel."
+      content="Convert MP3 audio and cover art into optimized MP4 videos in your browser, then download the file or upload directly to your YouTube channel."
     />
     <meta
       name="keywords"
@@ -22,48 +22,110 @@
     <meta name="color-scheme" content="dark light" />
 
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:site_name" content="MP3 to MP4 Studio" />
-    <meta property="og:title" content="MP3 to MP4 Converter with YouTube Upload" />
+    <meta property="og:title" content="MP3 to MP4 Converter | YouTube Upload Studio" />
     <meta
       property="og:description"
-      content="Create MP4 videos from MP3 files and cover images directly in your browser, with optional YouTube upload through OAuth."
+      content="Create optimized MP4 videos from MP3 files and cover images directly in your browser, with optional YouTube upload through OAuth."
     />
     <meta property="og:url" content="https://convert.kindeeyudee.com/" />
     <meta property="og:image" content="https://convert.kindeeyudee.com/og-image.svg" />
     <meta property="og:image:alt" content="MP3 to MP4 Studio interface preview" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="MP3 to MP4 Converter with YouTube Upload" />
+    <meta name="twitter:title" content="MP3 to MP4 Converter | YouTube Upload Studio" />
     <meta
       name="twitter:description"
-      content="Convert MP3 and cover art into MP4 in the browser, then download or upload to YouTube."
+      content="Convert MP3 and cover art into optimized MP4 in the browser, then download or upload to YouTube."
     />
     <meta name="twitter:image" content="https://convert.kindeeyudee.com/og-image.svg" />
 
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "MP3 to MP4 Studio",
-        "applicationCategory": "MultimediaApplication",
-        "operatingSystem": "Web",
-        "url": "https://convert.kindeeyudee.com/",
-        "description": "Convert MP3 audio and cover art into compressed MP4 videos in your browser, then download or upload to YouTube.",
-        "featureList": [
-          "Browser-based MP3 to MP4 conversion",
-          "Cover art video generation",
-          "Compressed H.264 and AAC output",
-          "Direct YouTube upload with OAuth",
-          "Realtime progress feedback"
-        ],
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        }
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://convert.kindeeyudee.com/#organization",
+            "name": "TheDevilzz",
+            "url": "https://github.com/TheDevilzz"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://convert.kindeeyudee.com/#website",
+            "name": "MP3 to MP4 Studio",
+            "url": "https://convert.kindeeyudee.com/",
+            "publisher": {
+              "@id": "https://convert.kindeeyudee.com/#organization"
+            },
+            "inLanguage": ["en", "th"]
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://convert.kindeeyudee.com/#app",
+            "name": "MP3 to MP4 Studio",
+            "alternateName": "MP3 to MP4 Converter",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Web",
+            "url": "https://convert.kindeeyudee.com/",
+            "image": "https://convert.kindeeyudee.com/og-image.svg",
+            "description": "Convert MP3 audio and cover art into optimized MP4 videos in your browser, then download or upload to YouTube.",
+            "browserRequirements": "Requires a modern browser with WebAssembly support.",
+            "featureList": [
+              "Browser-based MP3 to MP4 conversion",
+              "Cover art video generation",
+              "Optimized H.264 and AAC output",
+              "Direct YouTube upload with OAuth",
+              "Realtime progress feedback",
+              "Thai and English interface"
+            ],
+            "creator": {
+              "@id": "https://convert.kindeeyudee.com/#organization"
+            },
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://convert.kindeeyudee.com/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Can I convert MP3 files to MP4 in the browser?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. MP3 to MP4 Studio converts MP3 audio with optional cover art into an MP4 video directly in a modern browser."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I upload the converted video to YouTube?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. After connecting a YouTube channel with OAuth, converted MP4 videos can be uploaded to YouTube from the app."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is MP3 to MP4 Studio free to use?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The app is offered as a free web tool for MP3 to MP4 conversion and optional YouTube upload."
+                }
+              }
+            ]
+          }
+        ]
       }
     </script>
-    <title>MP3 to MP4 Converter with YouTube Upload | MP3 to MP4 Studio</title>
+    <title>MP3 to MP4 Converter | YouTube Upload Studio</title>
   </head>
   <body>
     <div id="root"></div>

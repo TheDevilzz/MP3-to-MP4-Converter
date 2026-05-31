@@ -1,0 +1,18 @@
+# MP3 to MP4 Studio
+
+> Free browser-based MP3 to MP4 converter with cover art video generation and optional YouTube upload.
+
+MP3 to MP4 Studio helps users convert MP3 audio and cover images into optimized MP4 videos. The app supports direct download, YouTube upload through OAuth, realtime progress feedback, and Thai/English UI.
+
+## Key Pages
+
+- [MP3 to MP4 Studio](https://convert.kindeeyudee.com/): Convert MP3 files to MP4 videos, download the result, or upload to YouTube.
+- [GitHub Repository](https://github.com/TheDevilzz/MP3-to-MP4-Converter): Source code, deployment notes, and project documentation.
+
+## Primary Topics
+
+- MP3 to MP4 conversion
+- Audio to video conversion
+- Cover art video generation
+- Browser-based FFmpeg conversion
+- YouTube video upload
